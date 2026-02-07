@@ -1,0 +1,43 @@
+# Project context (local only)
+CLAUDE.md
+MEMORY.md
+CLUSTER_SETUP.md
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Data (too large for git)
+data/
+*.csv
+*.zip
+*.gz
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Results and figures (sent privately, not committed)
+results/
+figures/
+
+# Logs and outputs
+logs/
+*.log
+
+# Model checkpoints
+checkpoints/
+*.pth
+*.pt
