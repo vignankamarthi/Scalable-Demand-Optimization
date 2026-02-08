@@ -45,10 +45,14 @@ Scalable-Demand-Optimization/
 │   ├── 01_eda.py               # Exploratory data analysis (11 figures)
 │   ├── 02_train.py             # Full training pipeline (6 models)
 │   └── train.sbatch            # SLURM batch script for GPU cluster
+├── Final-Project-Proposal-Markdown/  # 10-section project proposal
 ├── data/                       # Dataset (gitignored)
 ├── figures/                    # EDA and evaluation plots (gitignored)
 ├── results/                    # Model metrics and summaries (gitignored)
+├── logs/                       # Training logs (gitignored)
+├── ML-EXPERIMENT_DESIGN.md     # Full experiment plan, model configs, EDA rationale
 ├── DATASET_README.txt          # Authoritative column definitions from dataset authors
+├── TEST_VALIDATION.md          # TDD methodology and test coverage strategy
 └── TASK.md                     # Reproducible execution guide
 ```
 
