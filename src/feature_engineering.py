@@ -50,7 +50,7 @@ def compute_rolling_features(
     Window sizes are in number of rows (= seconds at 1Hz).
 
     Creates columns: speed_roll_mean_{w}, speed_roll_std_{w},
-                     power_roll_mean_{w} for each window w.
+                     power_roll_mean_{w}, power_roll_std_{w} for each window w.
     """
     if windows is None:
         windows = ROLLING_WINDOWS
@@ -68,6 +68,9 @@ def compute_rolling_features(
         if "electric_powerDemand" in result.columns:
             result[f"power_roll_mean_{w}"] = (
                 result["electric_powerDemand"].rolling(w, min_periods=w).mean()
+            )
+            result[f"power_roll_std_{w}"] = (
+                result["electric_powerDemand"].rolling(w, min_periods=w).std()
             )
 
     return result
@@ -111,13 +114,23 @@ def build_feature_set(
     # Temporal features
     result = extract_temporal_features(result)
 
-    # Rolling features (per-mission would be ideal, but for single-mission
-    # DataFrames this is correct; for concatenated multi-mission DataFrames,
-    # caller should groupby mission_name and apply separately)
-    result = compute_rolling_features(result, windows=rolling_windows)
+    # Rolling features (per-mission to prevent boundary bleeding)
+    if "mission_name" in result.columns:
+        parts = []
+        for _, group in result.groupby("mission_name", sort=False):
+            parts.append(compute_rolling_features(group, windows=rolling_windows))
+        result = pd.concat(parts)
+    else:
+        result = compute_rolling_features(result, windows=rolling_windows)
 
-    # Acceleration
-    result = compute_acceleration(result)
+    # Acceleration (per-mission to prevent boundary bleeding)
+    if "mission_name" in result.columns:
+        parts = []
+        for _, group in result.groupby("mission_name", sort=False):
+            parts.append(compute_acceleration(group))
+        result = pd.concat(parts)
+    else:
+        result = compute_acceleration(result)
 
     # Categorical encoding
     if "itcs_busRoute" in result.columns:
@@ -126,11 +139,14 @@ def build_feature_set(
         result = encode_stop_name(result, top_n=top_n_stops)
 
     # Drop raw columns that have been transformed or are not features
+    # Feature inclusion/exclusion decisions: see ML-EXPERIMENT_DESIGN.md
     drop_cols = [
         "time_iso", "time_unix",
-        "gnss_latitude", "gnss_longitude",  # replaced by lat_deg, lon_deg
-        "temperature_ambient",               # replaced by temp_C
-        "odometry_vehicleSpeed",             # replaced by speed_kmh + rolling
+        "gnss_latitude", "gnss_longitude",   # replaced by lat_deg, lon_deg
+        "temperature_ambient",                # raw Kelvin, excluded entirely
+        "odometry_vehicleSpeed",              # replaced by speed_kmh + rolling
+        "temp_C",                             # EDA Fig 08: r=-0.011, no signal
+        "busNumber",                          # bus identifier, not a predictor
     ]
     for col in drop_cols:
         if col in result.columns:

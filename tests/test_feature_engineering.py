@@ -279,3 +279,107 @@ class TestBuildFeatureSet:
             if col == "mission_name":
                 continue
             assert not pd.api.types.is_string_dtype(result[col]), f"{col} is string dtype"
+
+    def test_excludes_temp_C(self, dense_mission_df):
+        result = build_feature_set(dense_mission_df)
+        assert "temp_C" not in result.columns
+
+    def test_excludes_busNumber(self, dense_mission_df):
+        df = dense_mission_df.copy()
+        df["busNumber"] = 183
+        result = build_feature_set(df)
+        assert "busNumber" not in result.columns
+
+    def test_has_power_roll_std(self, dense_mission_df):
+        result = build_feature_set(dense_mission_df, rolling_windows=[5])
+        assert "power_roll_std_5" in result.columns
+
+    def test_power_roll_std_default_windows(self, dense_mission_df):
+        result = build_feature_set(dense_mission_df)
+        assert "power_roll_std_60" in result.columns
+        assert "power_roll_std_300" in result.columns
+
+
+# -----------------------------------------------------------------------
+# Mission boundary bleeding tests
+# -----------------------------------------------------------------------
+
+class TestMissionBoundarySafety:
+    """Verify rolling features and acceleration do not bleed across missions."""
+
+    @pytest.fixture
+    def two_mission_df(self):
+        """Two short missions concatenated. Each has 10 rows."""
+        n = 10
+        ts1 = pd.date_range("2019-04-30T07:00:00Z", periods=n, freq="1s")
+        ts2 = pd.date_range("2019-04-30T09:00:00Z", periods=n, freq="1s")
+        base_unix = 1556594336
+
+        m1 = pd.DataFrame({
+            "time_iso": ts1.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "time_unix": [base_unix + i for i in range(n)],
+            "itcs_busRoute": ["83"] * n,
+            "itcs_stopName": ["StopA"] * n,
+            "itcs_numberOfPassengers": [10.0] * n,
+            "odometry_vehicleSpeed": [float(i) for i in range(n)],
+            "temperature_ambient": [283.15] * n,
+            "electric_powerDemand": [10000.0 + i * 100 for i in range(n)],
+            "traction_tractionForce": [500.0] * n,
+            "traction_brakePressure": [0.0] * n,
+            "gnss_altitude": [408.0] * n,
+            "gnss_latitude": [0.8267] * n,
+            "gnss_longitude": [0.1491] * n,
+            "status_doorIsOpen": [0] * n,
+            "mission_name": ["mission_A"] * n,
+        })
+
+        m2 = pd.DataFrame({
+            "time_iso": ts2.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "time_unix": [base_unix + 7200 + i for i in range(n)],
+            "itcs_busRoute": ["83"] * n,
+            "itcs_stopName": ["StopB"] * n,
+            "itcs_numberOfPassengers": [20.0] * n,
+            "odometry_vehicleSpeed": [float(n - i) for i in range(n)],
+            "temperature_ambient": [283.15] * n,
+            "electric_powerDemand": [20000.0 + i * 100 for i in range(n)],
+            "traction_tractionForce": [500.0] * n,
+            "traction_brakePressure": [0.0] * n,
+            "gnss_altitude": [408.0] * n,
+            "gnss_latitude": [0.8267] * n,
+            "gnss_longitude": [0.1491] * n,
+            "status_doorIsOpen": [0] * n,
+            "mission_name": ["mission_B"] * n,
+        })
+
+        return pd.concat([m1, m2], ignore_index=True)
+
+    def test_rolling_does_not_bleed_across_missions(self, two_mission_df):
+        """First rows of mission_B should have NaN rolling, not values from mission_A."""
+        result = build_feature_set(two_mission_df, rolling_windows=[5])
+        # mission_B starts at index 10
+        mission_b = result[result["mission_name"] == "mission_B"]
+        # First 4 rows of mission_B (indices 0-3 within group) should be NaN
+        # for window=5 rolling features
+        assert mission_b["speed_roll_mean_5"].iloc[:4].isna().all(), \
+            "Rolling mean bled across mission boundary"
+
+    def test_acceleration_does_not_bleed_across_missions(self, two_mission_df):
+        """First row of mission_B acceleration should be NaN, not diff from mission_A's last row."""
+        result = build_feature_set(two_mission_df, rolling_windows=[5])
+        mission_b = result[result["mission_name"] == "mission_B"]
+        assert np.isnan(mission_b["acceleration"].iloc[0]), \
+            "Acceleration bled across mission boundary"
+
+    def test_single_mission_still_works(self, two_mission_df):
+        """Single-mission subset should produce identical results to pre-fix behavior."""
+        single = two_mission_df[two_mission_df["mission_name"] == "mission_A"].copy()
+        result = build_feature_set(single, rolling_windows=[5])
+        assert "acceleration" in result.columns
+        assert "speed_roll_mean_5" in result.columns
+
+    def test_power_roll_std_does_not_bleed(self, two_mission_df):
+        """power_roll_std at mission boundary should be NaN."""
+        result = build_feature_set(two_mission_df, rolling_windows=[5])
+        mission_b = result[result["mission_name"] == "mission_B"]
+        assert mission_b["power_roll_std_5"].iloc[:4].isna().all(), \
+            "Power roll std bled across mission boundary"
