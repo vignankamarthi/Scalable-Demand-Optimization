@@ -105,7 +105,13 @@ def forward_fill_stop_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in ["itcs_busRoute", "itcs_stopName"]:
         if col in result.columns:
-            result[col] = result[col].replace("-", np.nan).ffill().fillna("-")
+            with pd.option_context("future.no_silent_downcasting", True):
+                result[col] = (
+                    result[col]
+                    .where(result[col] != "-", np.nan)
+                    .ffill()
+                    .fillna("-")
+                )
 
     return result
 
