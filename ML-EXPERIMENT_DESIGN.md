@@ -11,11 +11,11 @@
 | Data loading | DONE | src/data_loading.py | 11/11 |
 | Preprocessing (units, temporal, ffill) | DONE | src/preprocessing.py | 48/48 |
 | Target construction (tercile binning) | DONE | src/target.py | 14/14 |
-| Feature engineering (rolling, encoding) | DONE | src/feature_engineering.py | 34/34 |
+| Feature engineering (rolling, encoding) | DONE | src/feature_engineering.py | 42/42 |
 | Model pipeline (split, train, eval) | DONE | src/model_pipeline.py | 18/18 |
 | EDA (11 figures) | DONE | scripts/01_eda.py | visual |
 | Training script | READY | scripts/02_train.py | -- |
-| **TOTAL TESTS** | **125/125 PASSING** | | 1.30s |
+| **TOTAL TESTS** | **133/133 PASSING** | | 1.16s |
 
 ## The 6 Models
 
@@ -28,13 +28,69 @@
 | 5 | **MLP Medium** | (128, 64), ReLU, early stop | Yes | Intermediate capacity |
 | 6 | **MLP Large** | (256, 128, 64), ReLU, early stop | Yes | Depth-performance tradeoff |
 
-## Feature Groups
+## Feature Specification (Source of Truth)
 
-- **Temporal**: hour, dayofweek, month, year, is_weekend, is_rush_hour
-- **Spatial**: lat_deg, lon_deg (converted from radians)
-- **Operational**: speed_kmh, temp_C, acceleration, rolling mean/std (speed + power, 60s + 300s windows)
-- **Categorical**: route (one-hot, drop_first), stop_name (top-20, rest bucketed as __other__)
-- **Sensor**: door state, HVAC power, odometry
+This table is exhaustive. Every feature entering the model is listed below.
+Code MUST match this spec. See `src/feature_engineering.py:build_feature_set()`.
+
+### Excluded Features
+
+| Feature | Raw Source | Why Excluded |
+|---------|-----------|-------------|
+| `busNumber` | metaData.csv | Bus identifier (183 or 208), not a predictor. Introduces spurious correlation. |
+| `temp_C` | `temperature_ambient` (K->C) | EDA Figure 08: r = -0.011 with ridership. No signal. |
+| `time_iso`, `time_unix` | raw columns | Raw timestamps. Replaced by engineered temporal features. |
+| `gnss_latitude`, `gnss_longitude` | raw columns | Raw radians. Replaced by `lat_deg`, `lon_deg`. |
+| `odometry_vehicleSpeed` | raw column | Raw m/s. Replaced by `speed_kmh` + rolling features. |
+| `temperature_ambient` | raw column | Raw Kelvin. temp excluded entirely per EDA. |
+| `gnss_course` | raw column | Not loaded (EDA_USE_COLS uses GNSS_COLS[:3], skipping course). Heading not relevant to demand. |
+| Individual wheel speeds (6 cols) | raw columns | Not loaded. Redundant with `odometry_vehicleSpeed`. |
+| `odometry_articulationAngle` | raw column | Not loaded. Articulation angle not relevant to demand. |
+| `odometry_steeringAngle` | raw column | Not loaded. Steering angle not relevant to demand. |
+
+### Included Features (~53 total)
+
+| # | Engineered Name | Source Column | Type | Unit | Category | Justification |
+|---|----------------|---------------|------|------|----------|---------------|
+| 1 | `hour` | `time_iso` | int | 0-23 | Temporal | EDA Fig 03: clear hourly ridership patterns |
+| 2 | `dayofweek` | `time_iso` | int | 0-6 (Mon-Sun) | Temporal | EDA Fig 03: weekday vs weekend demand differs |
+| 3 | `month` | `time_iso` | int | 1-12 | Temporal | EDA Fig 04: seasonal variation visible |
+| 4 | `year` | `time_iso` | int | 2019-2022 | Temporal | EDA Fig 04: COVID disruption in 2020 |
+| 5 | `is_weekend` | `time_iso` | bool | - | Temporal | EDA Fig 03: weekend demand pattern shift |
+| 6 | `is_rush_hour` | `time_iso` | bool | - | Temporal | EDA Fig 03: weekday peak at hour 15 |
+| 7 | `lat_deg` | `gnss_latitude` | float | degrees | Spatial | Spatial demand clustering across Zurich |
+| 8 | `lon_deg` | `gnss_longitude` | float | degrees | Spatial | Spatial demand clustering across Zurich |
+| 9 | `gnss_altitude` | `gnss_altitude` | float | meters | Spatial | Elevation variation in hilly Zurich routes |
+| 10 | `speed_kmh` | `odometry_vehicleSpeed` | float | km/h | Operational | Vehicle operational state indicator |
+| 11 | `acceleration` | `odometry_vehicleSpeed` (diff) | float | m/s^2 | Operational | Stop-and-go dynamics; computed per-mission |
+| 12 | `speed_roll_mean_60` | `odometry_vehicleSpeed` | float | m/s | Operational | 1-min smoothed speed trend |
+| 13 | `speed_roll_std_60` | `odometry_vehicleSpeed` | float | m/s | Operational | 1-min speed variability (traffic) |
+| 14 | `speed_roll_mean_300` | `odometry_vehicleSpeed` | float | m/s | Operational | 5-min smoothed speed trend |
+| 15 | `speed_roll_std_300` | `odometry_vehicleSpeed` | float | m/s | Operational | 5-min speed variability |
+| 16 | `electric_powerDemand` | `electric_powerDemand` | float | W | Sensor | Total vehicle power draw; increases with HVAC + passenger load |
+| 17 | `power_roll_mean_60` | `electric_powerDemand` | float | W | Sensor | 1-min smoothed power trend |
+| 18 | `power_roll_std_60` | `electric_powerDemand` | float | W | Sensor | 1-min power variability |
+| 19 | `power_roll_mean_300` | `electric_powerDemand` | float | W | Sensor | 5-min smoothed power trend |
+| 20 | `power_roll_std_300` | `electric_powerDemand` | float | W | Sensor | 5-min power variability |
+| 21 | `traction_tractionForce` | `traction_tractionForce` | float | N | Sensor | Motor force estimate; load-dependent |
+| 22 | `traction_brakePressure` | `traction_brakePressure` | float | Pa | Sensor | Brake line pressure; stop pattern indicator |
+| 23 | `status_doorIsOpen` | `status_doorIsOpen` | bool | - | Status | Door state; boarding indicator (EDA Fig 09: weak but keep for feature importance) |
+| 24 | `status_gridIsAvailable` | `status_gridIsAvailable` | bool | - | Status | Overhead grid connection; route segment type |
+| 25 | `status_haltBrakeIsActive` | `status_haltBrakeIsActive` | bool | - | Status | Halt brake = standing still; stop dwell proxy |
+| 26 | `status_parkBrakeIsActive` | `status_parkBrakeIsActive` | bool | - | Status | Park brake = extended stop; terminus detection |
+| 27-34 | `route_*` (8 dummies) | `itcs_busRoute` | int | 0/1 | Categorical | One-hot, drop_first. EDA Fig 06: distinct demand per route. |
+| 35-53 | `stop_*` (19 dummies) | `itcs_stopName` | int | 0/1 | Categorical | Top-20 + __other__, drop_first. EDA Fig 05: high stop-level variance. |
+
+Total: ~53 features (exact count depends on route/stop cardinality in training data).
+
+### Feature Groups Summary
+
+- **Temporal** (6): hour, dayofweek, month, year, is_weekend, is_rush_hour
+- **Spatial** (3): lat_deg, lon_deg, gnss_altitude
+- **Operational** (5): speed_kmh, acceleration, speed_roll_mean/std at 60s and 300s
+- **Sensor** (7): electric_powerDemand, power_roll_mean/std at 60s and 300s, traction_tractionForce, traction_brakePressure
+- **Status** (4): status_doorIsOpen, status_gridIsAvailable, status_haltBrakeIsActive, status_parkBrakeIsActive
+- **Categorical** (~27): route dummies (8) + stop dummies (19)
 
 ## Evaluation Protocol
 
@@ -72,13 +128,23 @@ Each EDA figure answers a specific question required before modeling. Source: pr
 | Temperature NOT a feature | Correlation with ridership: -0.011 (essentially zero) |
 | Mission-level splits | Prevents temporal leakage from same-mission observations |
 
+## Compute Environment
+
+- **Cluster**: NEU Explorer (SLURM)
+- **Partition**: `gpu` (8-hour wall time limit)
+- **Default allocation**: 1x H200 GPU, 12 CPUs, 128GB RAM, 8 hours
+- **Multi-GPU** (must be strongly justified): 8x H200, 12 CPUs, 24 hours
+- **Why GPU partition for CPU models**: The `gpu` partition is the only one with an 8-hour limit. The `short` partition (4h) is insufficient for training 6 models on 37M rows. The H200 GPU remains idle but is allocated for partition access.
+- **Why 128GB RAM**: First run at 64GB was killed ~25 min into Random Forest training. X_train alone is ~15.9GB (37M rows x 53 features x 8 bytes). With DataFrame copies during feature engineering, StandardScaler transforms, and RF building 300 trees concurrently on 12 CPUs (`n_jobs=-1`), peak memory exceeds 64GB. 128GB provides adequate headroom.
+- **All models are sklearn (CPU-only)**: Decision Tree, Random Forest, k-NN, 3x MLP. No GPU-accelerated training.
+
 ## Execution
 
 ```bash
 # Local
 python3 scripts/02_train.py
 
-# Cluster (NEU Explorer, 1x H100)
+# Cluster (NEU Explorer, 1x H200, 128GB RAM)
 sbatch scripts/train.sbatch
 ```
 
@@ -96,6 +162,14 @@ figures/model_comparison.png   -- bar chart comparing all 6 models
 1. Review model_summary.csv -- rank models by macro F1
 2. Inspect confusion matrices -- check for systematic misclassification patterns
 3. If any model has < 0.5 macro F1, diagnose (class collapse? feature issues?)
-4. Feature importance from Random Forest -- answers RQ2 (which feature groups matter)
+4. **Feature importance analysis (RQ2)**:
+   - Extract Random Forest `.feature_importances_` (Gini importance, built-in)
+   - Generate `figures/feature_importance.png` -- bar chart of top-20 features by importance
+   - Aggregate importance by feature group (Temporal, Spatial, Operational, Sensor, Status, Categorical)
+   - Generate `figures/feature_group_importance.png` -- group-level bar chart
+   - Empirically validate EDA exclusion decisions:
+     - Confirm temp_C exclusion was justified (compare to included features of similar type)
+     - Check which status flags carry real signal vs noise (door, grid, halt brake, park brake)
+   - Compute permutation importance on test set for all 6 models (cross-validate Gini findings)
 5. Write results section for final report
 6. Submit deliverables (report + code + figures via Teams)

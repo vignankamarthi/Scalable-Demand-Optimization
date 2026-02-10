@@ -30,7 +30,9 @@ ROLLING_WINDOWS = [60, 300]  # seconds
 N_DEMAND_CLASSES = 3
 DEMAND_LABELS = ["low", "medium", "high"]
 
-# Columns from the dataset we use for EDA / modeling
+# Columns loaded for EDA and training.
+# Feature inclusion/exclusion decisions: see ML-EXPERIMENT_DESIGN.md
+# Columns loaded here may be dropped during feature engineering.
 TIME_COLS = ["time_iso", "time_unix"]
 GNSS_COLS = ["gnss_latitude", "gnss_longitude", "gnss_altitude", "gnss_course"]
 ITCS_COLS = ["itcs_busRoute", "itcs_numberOfPassengers", "itcs_stopName"]
