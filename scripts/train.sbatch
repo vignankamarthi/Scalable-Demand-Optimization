@@ -4,9 +4,11 @@
 #SBATCH --error=logs/train_%j.err
 #SBATCH --time=08:00:00
 #SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:h200:1
 #SBATCH --cpus-per-task=12
-#SBATCH --mem=64G
+#SBATCH --mem=128G
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=kamarthi.v@northeastern.edu
 
 echo "Job started: $(date)"
 echo "Node: $(hostname)"
