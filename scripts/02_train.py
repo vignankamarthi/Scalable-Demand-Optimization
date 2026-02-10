@@ -2,8 +2,13 @@
 Training script for ZTBus ridership demand classification.
 Designed to run on NEU Explorer cluster (H100 GPU, 12 CPUs).
 
+Supports per-model checkpointing: if the job is killed mid-training,
+re-running the script resumes from the last completed model.
+Use --fresh to discard checkpoint and start from scratch.
+
 Usage:
-    python scripts/02_train.py
+    python scripts/02_train.py           # resume from checkpoint if present
+    python scripts/02_train.py --fresh   # ignore checkpoint, start over
 """
 
 import sys
@@ -30,6 +35,7 @@ from src.model_pipeline import (
     evaluate_model,
     get_model_configs,
 )
+from src.checkpoint import load_checkpoint, save_checkpoint
 
 import matplotlib
 matplotlib.use("Agg")
@@ -38,6 +44,9 @@ import seaborn as sns
 
 os.makedirs(RESULTS_DIR, exist_ok=True)
 os.makedirs(FIGURES_DIR, exist_ok=True)
+
+CHECKPOINT_PATH = os.path.join(RESULTS_DIR, "checkpoint.json")
+FRESH_RUN = "--fresh" in sys.argv
 
 
 def log(msg):
@@ -152,13 +161,22 @@ scaler = StandardScaler()
 scaler.fit(X_train)
 
 # -----------------------------------------------------------------------
-# 7. Train and evaluate all models
+# 7. Train and evaluate all models (with per-model checkpointing)
 # -----------------------------------------------------------------------
 
-results = {}
+results = load_checkpoint(CHECKPOINT_PATH, fresh=FRESH_RUN)
+if results:
+    log(f"\nResuming from checkpoint: {len(results)} model(s) already completed")
+    for name in results:
+        log(f"  [checkpoint] {name}: F1={results[name]['macro_f1']:.4f}")
+
 configs = get_model_configs(seed=RANDOM_SEED)
 
 for model_name, cfg in configs.items():
+    if model_name in results:
+        log(f"\n--- Skipping: {model_name} (already in checkpoint) ---")
+        continue
+
     log(f"\n--- Training: {model_name} ---")
     model = cfg["model"]
     needs_scaling = cfg.get("needs_scaling", False)
@@ -185,6 +203,8 @@ for model_name, cfg in configs.items():
     metrics["params"] = cfg["params"]
 
     results[model_name] = metrics
+    save_checkpoint(results, CHECKPOINT_PATH)
+    log(f"  [checkpoint saved: {len(results)}/{len(configs)} models]")
 
     log(f"  Macro F1:          {metrics['macro_f1']:.4f}")
     log(f"  Balanced Accuracy: {metrics['balanced_accuracy']:.4f}")
@@ -230,6 +250,11 @@ json_path = os.path.join(RESULTS_DIR, "model_results.json")
 with open(json_path, "w") as f:
     json.dump(json_results, f, indent=2)
 log(f"  Full results: {json_path}")
+
+# Remove checkpoint now that final results are saved
+if os.path.exists(CHECKPOINT_PATH):
+    os.remove(CHECKPOINT_PATH)
+    log("  Checkpoint cleared (final results saved)")
 
 # -----------------------------------------------------------------------
 # 9. Confusion matrix plots
