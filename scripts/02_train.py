@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import (
     FIGURES_DIR, RESULTS_DIR, RANDOM_SEED, EDA_USE_COLS,
+    FEATURE_GROUP_MAP, FEATURE_GROUP_PREFIXES,
 )
 from src.data_loading import load_metadata, load_sample_missions
 from src.preprocessing import forward_fill_stop_columns, apply_unit_conversions
@@ -171,6 +172,7 @@ if results:
         log(f"  [checkpoint] {name}: F1={results[name]['macro_f1']:.4f}")
 
 configs = get_model_configs(seed=RANDOM_SEED)
+trained_models = {}  # retain fitted model objects for post-training analysis
 
 for model_name, cfg in configs.items():
     if model_name in results:
@@ -192,6 +194,7 @@ for model_name, cfg in configs.items():
     model.fit(X_tr, y_train)
     train_time = time.time() - t0
     log(f"  Trained in {train_time:.1f}s")
+    trained_models[model_name] = model
 
     t0 = time.time()
     y_pred = model.predict(X_te)
@@ -279,6 +282,76 @@ for model_name, m in results.items():
     )
     plt.close(fig)
     log(f"  Saved: cm_{model_name}.png")
+
+# -----------------------------------------------------------------------
+# 9b. Feature importance (Random Forest)
+# -----------------------------------------------------------------------
+
+log("\n--- Feature importance analysis (Random Forest) ---")
+
+
+def _feature_to_group(feat_name):
+    """Map a feature name to its group using exact match or prefix."""
+    if feat_name in FEATURE_GROUP_MAP:
+        return FEATURE_GROUP_MAP[feat_name]
+    for prefix, group in FEATURE_GROUP_PREFIXES.items():
+        if feat_name.startswith(prefix):
+            return group
+    return "Unknown"
+
+
+if "random_forest" in trained_models:
+    rf_model = trained_models["random_forest"]
+    importances = rf_model.feature_importances_
+    feature_names = X_train.columns.tolist()
+
+    imp_df = pd.DataFrame({
+        "feature": feature_names,
+        "importance": importances,
+    }).sort_values("importance", ascending=False)
+
+    # Top-20 feature importance bar chart
+    top20 = imp_df.head(20).sort_values("importance", ascending=True)
+    fig, ax = plt.subplots(figsize=(10, 8))
+    ax.barh(top20["feature"], top20["importance"], color="#2196F3")
+    ax.set_xlabel("Gini Importance")
+    ax.set_title("Random Forest -- Top 20 Feature Importances")
+    fig.tight_layout()
+    fig.savefig(
+        os.path.join(FIGURES_DIR, "feature_importance.png"),
+        bbox_inches="tight", dpi=150, facecolor="white",
+    )
+    plt.close(fig)
+    log("  Saved: feature_importance.png")
+
+    # Group-level importance
+    imp_df["group"] = imp_df["feature"].apply(_feature_to_group)
+    group_imp = imp_df.groupby("group")["importance"].sum().sort_values(ascending=True)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    colors = {
+        "Temporal": "#FF9800", "Spatial": "#4CAF50", "Operational": "#2196F3",
+        "Sensor": "#9C27B0", "Status": "#F44336", "Categorical": "#607D8B",
+        "Unknown": "#9E9E9E",
+    }
+    bar_colors = [colors.get(g, "#9E9E9E") for g in group_imp.index]
+    ax.barh(group_imp.index, group_imp.values, color=bar_colors)
+    ax.set_xlabel("Summed Gini Importance")
+    ax.set_title("Feature Group Importance (Random Forest)")
+    fig.tight_layout()
+    fig.savefig(
+        os.path.join(FIGURES_DIR, "feature_group_importance.png"),
+        bbox_inches="tight", dpi=150, facecolor="white",
+    )
+    plt.close(fig)
+    log("  Saved: feature_group_importance.png")
+
+    # Save raw importances to CSV for reference
+    imp_df.to_csv(os.path.join(RESULTS_DIR, "feature_importances.csv"), index=False)
+    log("  Saved: results/feature_importances.csv")
+else:
+    log("  WARNING: random_forest not in trained_models (skipped or checkpointed)")
+    log("  Feature importance figures not generated.")
 
 # Model comparison bar chart
 fig, ax = plt.subplots(figsize=(10, 6))

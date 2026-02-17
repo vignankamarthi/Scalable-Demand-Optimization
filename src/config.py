@@ -45,3 +45,27 @@ SENSOR_COLS = ["temperature_ambient", "electric_powerDemand",
                "traction_tractionForce", "traction_brakePressure"]
 
 EDA_USE_COLS = TIME_COLS + GNSS_COLS[:3] + ITCS_COLS + ODOMETRY_COLS + STATUS_COLS + SENSOR_COLS
+
+# Feature group mapping for importance analysis.
+# Categorical features (route_*, stop_*) use prefix matching -- see below.
+FEATURE_GROUP_MAP = {
+    # Temporal
+    "hour": "Temporal", "dayofweek": "Temporal", "month": "Temporal",
+    "year": "Temporal", "is_weekend": "Temporal", "is_rush_hour": "Temporal",
+    # Spatial
+    "lat_deg": "Spatial", "lon_deg": "Spatial", "gnss_altitude": "Spatial",
+    # Operational
+    "speed_kmh": "Operational", "acceleration": "Operational",
+    "speed_roll_mean_60": "Operational", "speed_roll_std_60": "Operational",
+    "speed_roll_mean_300": "Operational", "speed_roll_std_300": "Operational",
+    # Sensor
+    "electric_powerDemand": "Sensor",
+    "power_roll_mean_60": "Sensor", "power_roll_std_60": "Sensor",
+    "power_roll_mean_300": "Sensor", "power_roll_std_300": "Sensor",
+    "traction_tractionForce": "Sensor", "traction_brakePressure": "Sensor",
+    # Status
+    "status_doorIsOpen": "Status", "status_gridIsAvailable": "Status",
+    "status_haltBrakeIsActive": "Status", "status_parkBrakeIsActive": "Status",
+}
+# Prefix rules for one-hot encoded categoricals
+FEATURE_GROUP_PREFIXES = {"route_": "Categorical", "stop_": "Categorical"}
