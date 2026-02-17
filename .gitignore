@@ -29,15 +29,5 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Results and figures (sent privately, not committed)
-results/
-figures/
-
-# Logs and outputs
-logs/
+# Logs
 *.log
-
-# Model checkpoints
-checkpoints/
-*.pth
-*.pt
