@@ -197,10 +197,7 @@ class TestGetModelConfigs:
 
     def test_has_all_models(self):
         configs = get_model_configs()
-        expected = {
-            "decision_tree", "random_forest", "knn",
-            "mlp_small", "mlp_medium", "mlp_large",
-        }
+        expected = {"decision_tree", "random_forest"}
         assert expected == set(configs.keys())
 
     def test_each_config_has_model_key(self):

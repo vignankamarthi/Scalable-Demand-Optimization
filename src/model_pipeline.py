@@ -1,7 +1,6 @@
 """
 Model pipeline: train/test splitting, model configs, training, and evaluation.
-All scikit-learn based. MLPs use sklearn MLPClassifier (GPU via PyTorch
-can be added later if needed, but sklearn handles 5M rows on CPU fine).
+All scikit-learn based. Tree-based models only (Decision Tree, Random Forest).
 """
 from __future__ import annotations
 
@@ -10,8 +9,6 @@ import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import (
     f1_score,
     balanced_accuracy_score,
@@ -113,34 +110,5 @@ def get_model_configs(seed: int = RANDOM_SEED) -> dict:
             ),
             "params": {"n_estimators": 300, "max_depth": None, "n_jobs": -1},
             "needs_scaling": False,
-        },
-        "knn": {
-            "model": KNeighborsClassifier(n_neighbors=11, n_jobs=-1),
-            "params": {"n_neighbors": 11, "weights": "uniform", "n_jobs": -1},
-            "needs_scaling": True,
-        },
-        "mlp_small": {
-            "model": MLPClassifier(
-                hidden_layer_sizes=(64,),
-                max_iter=200, random_state=seed, early_stopping=True,
-            ),
-            "params": {"layers": "(64,)", "max_iter": 200, "early_stopping": True},
-            "needs_scaling": True,
-        },
-        "mlp_medium": {
-            "model": MLPClassifier(
-                hidden_layer_sizes=(128, 64),
-                max_iter=200, random_state=seed, early_stopping=True,
-            ),
-            "params": {"layers": "(128, 64)", "max_iter": 200, "early_stopping": True},
-            "needs_scaling": True,
-        },
-        "mlp_large": {
-            "model": MLPClassifier(
-                hidden_layer_sizes=(256, 128, 64),
-                max_iter=200, random_state=seed, early_stopping=True,
-            ),
-            "params": {"layers": "(256, 128, 64)", "max_iter": 200, "early_stopping": True},
-            "needs_scaling": True,
         },
     }
