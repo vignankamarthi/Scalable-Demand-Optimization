@@ -1,6 +1,7 @@
 """
 Target variable construction: discretize passenger counts into demand classes.
 """
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd

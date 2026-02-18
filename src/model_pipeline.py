@@ -3,6 +3,7 @@ Model pipeline: train/test splitting, model configs, training, and evaluation.
 All scikit-learn based. MLPs use sklearn MLPClassifier (GPU via PyTorch
 can be added later if needed, but sklearn handles 5M rows on CPU fine).
 """
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd

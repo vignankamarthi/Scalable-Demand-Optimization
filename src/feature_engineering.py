@@ -2,6 +2,7 @@
 Feature engineering: categorical encoding, rolling windows, acceleration,
 and full feature matrix assembly from forward-filled mission data.
 """
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
