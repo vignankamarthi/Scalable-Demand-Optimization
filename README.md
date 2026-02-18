@@ -14,7 +14,7 @@ The ZTBus dataset contains 1,409 trolleybus missions recorded at 1-second resolu
 **This repository builds a full classification pipeline**:
 - **Task**: 3-class ridership demand classification (low / medium / high)
 - **Key Insight**: Forward-filling passenger counts between stops (physically valid -- count is constant between boarding events) transforms 0.9% usable data into 100%
-- **Models**: Decision Tree, Random Forest, k-NN, MLP (Small / Medium / Large)
+- **Models**: Decision Tree, Random Forest
 - **Evaluation**: Macro F1, balanced accuracy, per-class confusion matrices
 
 ## The Problem: Urban Transit Demand Prediction
@@ -40,11 +40,11 @@ Scalable-Demand-Optimization/
 │   ├── feature_engineering.py  # Categorical encoding, rolling windows, acceleration
 │   ├── target.py               # Tercile binning, demand class assignment
 │   └── model_pipeline.py       # Train/test split, model configs, evaluation
-├── tests/                      # 125 tests (TDD -- all written before implementation)
+├── tests/                      # 150 tests (TDD -- all written before implementation)
 ├── scripts/
 │   ├── 01_eda.py               # Exploratory data analysis (11 figures)
-│   ├── 02_train.py             # Full training pipeline (6 models)
-│   └── train.sbatch            # SLURM batch script for GPU cluster
+│   ├── 02_train.py             # Full training pipeline (2 models: DT + RF)
+│   └── train.sbatch            # SLURM batch script for CPU cluster
 ├── Final-Project-Proposal-Markdown/  # 10-section project proposal
 ├── data/                       # Dataset (gitignored)
 ├── figures/                    # EDA and evaluation plots (gitignored)
@@ -61,16 +61,16 @@ Scalable-Demand-Optimization/
 Features are extracted from the dense (forward-filled) telemetry stream:
 
 - **Temporal**: hour, day of week, month, year, weekend flag, rush hour flag
-- **Sensor**: temperature (C), altitude, power demand, traction force, brake pressure, door state
+- **Sensor**: altitude, power demand, traction force, brake pressure, door state
 - **Kinematic**: speed (km/h), acceleration (m/s^2), rolling mean/std of speed (60s, 300s windows)
 - **Spatial**: latitude/longitude (degrees), route (one-hot), stop name (top-20 + other bucket)
 
 ## Training
 
-Training runs on a GPU cluster (1x H100, 12 CPUs). All stochastic operations seeded for reproducibility.
+Training runs on the NEU Explorer cluster (16 CPUs, 128GB RAM). All stochastic operations seeded for reproducibility.
 
 ```bash
-# Full pipeline (all 6 models)
+# Full pipeline (Decision Tree + Random Forest)
 python scripts/02_train.py
 
 # SLURM submission
@@ -79,7 +79,7 @@ sbatch scripts/train.sbatch
 
 ## Testing
 
-TDD methodology -- all 125 tests written before implementation. Mock data throughout, no dataset dependency.
+TDD methodology -- all 150 tests written before implementation. Mock data throughout, no dataset dependency.
 
 ```bash
 python -m pytest tests/ -v
@@ -92,7 +92,7 @@ python -m pytest tests/ -v
 | Forward-fill passenger counts | Physically valid: count constant between stops. Transforms 0.9% to 100% usable data |
 | Mission-level train/test split | Prevents temporal leakage from same-mission observations appearing in both sets |
 | Tercile boundaries from train only | Prevents information leakage from test distribution |
-| StandardScaler on train only | Applied to k-NN and MLP; tree models use raw features |
+| No feature scaling needed | Both models are tree-based; scaling is irrelevant for split-based classifiers |
 | Top-20 stop encoding | Avoids 147-column explosion; rare stops bucketed as "other" |
 | Rolling windows (60s, 300s) | Captures short-term and medium-term kinematic context |
 

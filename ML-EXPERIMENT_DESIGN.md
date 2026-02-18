@@ -15,18 +15,14 @@
 | Model pipeline (split, train, eval) | DONE | src/model_pipeline.py | 18/18 |
 | EDA (11 figures) | DONE | scripts/01_eda.py | visual |
 | Training script | READY | scripts/02_train.py | -- |
-| **TOTAL TESTS** | **133/133 PASSING** | | 1.16s |
+| **TOTAL TESTS** | **150/150 PASSING** | | 3.08s |
 
-## The 6 Models
+## The 2 Models
 
 | # | Model | Config | Scaling | Why |
 |---|-------|--------|---------|-----|
 | 1 | **Decision Tree** | gini, no max_depth | No | Interpretable baseline, human-readable rules |
 | 2 | **Random Forest** | 300 trees, all CPUs | No | Ensemble strength, feature importance (RQ2) |
-| 3 | **k-NN** | k=11, uniform weights | Yes | Local similarity, non-parametric |
-| 4 | **MLP Small** | (64,), ReLU, early stop | Yes | Lightweight neural baseline |
-| 5 | **MLP Medium** | (128, 64), ReLU, early stop | Yes | Intermediate capacity |
-| 6 | **MLP Large** | (256, 128, 64), ReLU, early stop | Yes | Depth-performance tradeoff |
 
 ## Feature Specification (Source of Truth)
 
@@ -97,7 +93,7 @@ Total: ~53 features (exact count depends on route/stop cardinality in training d
 - **Primary metrics**: Macro F1, Balanced Accuracy
 - **Diagnostics**: 3x3 confusion matrix per model, per-class precision/recall/F1
 - **Splits**: Mission-level 80/20 train/test (GroupShuffleSplit) -- no mission in both sets
-- **Leakage prevention**: Tercile boundaries from train only, scaler fitted on train only
+- **Leakage prevention**: Tercile boundaries from train only
 - **Reproducibility**: RANDOM_SEED = 42 everywhere
 
 ## EDA Rationale (11 Figures)
@@ -131,12 +127,11 @@ Each EDA figure answers a specific question required before modeling. Source: pr
 ## Compute Environment
 
 - **Cluster**: NEU Explorer (SLURM)
-- **Partition**: `gpu` (8-hour wall time limit)
-- **Default allocation**: 1x H200 GPU, 12 CPUs, 128GB RAM, 8 hours
-- **Multi-GPU** (must be strongly justified): 8x H200, 12 CPUs, 24 hours
-- **Why GPU partition for CPU models**: The `gpu` partition is the only one with an 8-hour limit. The `short` partition (4h) is insufficient for training 6 models on 37M rows. The H200 GPU remains idle but is allocated for partition access.
-- **Why 128GB RAM**: First run at 64GB was killed ~25 min into Random Forest training. X_train alone is ~15.9GB (37M rows x 53 features x 8 bytes). With DataFrame copies during feature engineering, StandardScaler transforms, and RF building 300 trees concurrently on 12 CPUs (`n_jobs=-1`), peak memory exceeds 64GB. 128GB provides adequate headroom.
-- **All models are sklearn (CPU-only)**: Decision Tree, Random Forest, k-NN, 3x MLP. No GPU-accelerated training.
+- **Partition**: `short` (4-hour wall time limit)
+- **Default allocation**: 16 CPUs, 128GB RAM, 4 hours
+- **Why short partition**: DT + RF total training time is ~2.2 hours, well within the 4-hour limit.
+- **Why 128GB RAM**: First run at 64GB was killed ~25 min into Random Forest training. X_train alone is ~15.9GB (37M rows x 53 features x 8 bytes). With DataFrame copies during feature engineering and RF building 300 trees concurrently on 16 CPUs (`n_jobs=-1`), peak memory exceeds 64GB. 128GB provides adequate headroom.
+- **All models are sklearn (CPU-only)**: Decision Tree, Random Forest. No GPU needed.
 
 ## Execution
 
@@ -144,17 +139,20 @@ Each EDA figure answers a specific question required before modeling. Source: pr
 # Local
 python3 scripts/02_train.py
 
-# Cluster (NEU Explorer, 1x H200, 128GB RAM)
+# Cluster (NEU Explorer, 16 CPUs, 128GB RAM)
 sbatch scripts/train.sbatch
 ```
 
 ## Expected Outputs
 
 ```
-results/model_summary.csv      -- 6 rows, macro_f1 + balanced_acc per model
-results/model_results.json     -- full metrics + confusion matrices
-figures/cm_<model>.png         -- confusion matrix heatmap per model (x6)
-figures/model_comparison.png   -- bar chart comparing all 6 models
+results/model_summary.csv          -- 2 rows, macro_f1 + balanced_acc per model
+results/model_results.json         -- full metrics + confusion matrices
+results/feature_importances.csv    -- per-feature Gini importance from RF
+figures/cm_<model>.png             -- confusion matrix heatmap per model (x2)
+figures/model_comparison.png       -- bar chart comparing both models
+figures/feature_importance.png     -- top-20 feature importance bar chart (RF)
+figures/feature_group_importance.png -- group-level importance bar chart (RF)
 ```
 
 ## What Happens After Training
@@ -170,6 +168,6 @@ figures/model_comparison.png   -- bar chart comparing all 6 models
    - Empirically validate EDA exclusion decisions:
      - Confirm temp_C exclusion was justified (compare to included features of similar type)
      - Check which status flags carry real signal vs noise (door, grid, halt brake, park brake)
-   - Compute permutation importance on test set for all 6 models (cross-validate Gini findings)
+   - Compute permutation importance on test set for both models (cross-validate Gini findings)
 5. Write results section for final report
 6. Submit deliverables (report + code + figures via Teams)
