@@ -2,26 +2,27 @@
 #SBATCH --job-name=ztbus-train
 #SBATCH --output=logs/train_%j.out
 #SBATCH --error=logs/train_%j.err
-#SBATCH --time=08:00:00
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:h200:1
-#SBATCH --cpus-per-task=12
-#SBATCH --mem=128G
+#SBATCH --time=04:00:00
+#SBATCH --partition=short
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=kamarthi.v@northeastern.edu
 
 echo "Job started: $(date)"
 echo "Node: $(hostname)"
-echo "GPUs: $CUDA_VISIBLE_DEVICES"
 echo "CPUs: $SLURM_CPUS_PER_TASK"
 
-# Activate environment
-source .venv/bin/activate
+# pip --user packages
+export PATH="$HOME/.local/bin:$PATH"
+
+# Work from project root
+cd ~/ondemand/Scalable-Demand-Optimization
 
 # Create logs directory
 mkdir -p logs
 
 # Run training
-python scripts/02_train.py
+python3 scripts/02_train.py
 
 echo "Job finished: $(date)"
