@@ -1,7 +1,8 @@
 """
 Training script for ZTBus ridership demand classification.
-Designed to run on NEU Explorer cluster (H100 GPU, 12 CPUs).
+Designed to run on NEU Explorer cluster (16 CPUs, 128GB RAM).
 
+Trains Decision Tree and Random Forest on ~37M rows, evaluates on ~9M rows.
 Supports per-model checkpointing: if the job is killed mid-training,
 re-running the script resumes from the last completed model.
 Use --fresh to discard checkpoint and start from scratch.
@@ -18,7 +19,6 @@ import time
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -157,10 +157,6 @@ y_test = y_test[test_mask]
 log(f"  X_train: {X_train.shape}, X_test: {X_test.shape}")
 log(f"  Features: {list(X_train.columns)}")
 
-# Fit scaler on training data
-scaler = StandardScaler()
-scaler.fit(X_train)
-
 # -----------------------------------------------------------------------
 # 7. Train and evaluate all models (with per-model checkpointing)
 # -----------------------------------------------------------------------
@@ -181,23 +177,15 @@ for model_name, cfg in configs.items():
 
     log(f"\n--- Training: {model_name} ---")
     model = cfg["model"]
-    needs_scaling = cfg.get("needs_scaling", False)
-
-    if needs_scaling:
-        X_tr = pd.DataFrame(scaler.transform(X_train), columns=X_train.columns)
-        X_te = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns)
-    else:
-        X_tr = X_train
-        X_te = X_test
 
     t0 = time.time()
-    model.fit(X_tr, y_train)
+    model.fit(X_train, y_train)
     train_time = time.time() - t0
     log(f"  Trained in {train_time:.1f}s")
     trained_models[model_name] = model
 
     t0 = time.time()
-    y_pred = model.predict(X_te)
+    y_pred = model.predict(X_test)
     pred_time = time.time() - t0
 
     metrics = evaluate_model(y_test, pd.Series(y_pred, index=y_test.index))

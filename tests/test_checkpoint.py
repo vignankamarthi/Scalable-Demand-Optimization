@@ -206,6 +206,6 @@ class TestIncrementalCheckpointing:
         save_checkpoint(sample_results, path=path)
         loaded = load_checkpoint(path=path, fresh=False)
 
-        all_models = ["decision_tree", "random_forest", "knn", "mlp_small", "mlp_medium", "mlp_large"]
+        all_models = ["decision_tree", "random_forest"]
         to_train = [m for m in all_models if m not in loaded]
-        assert to_train == ["knn", "mlp_small", "mlp_medium", "mlp_large"]
+        assert to_train == []

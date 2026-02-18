@@ -5,7 +5,7 @@
 #SBATCH --time=04:00:00
 #SBATCH --partition=short
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=kamarthi.v@northeastern.edu
 
@@ -23,6 +23,6 @@ cd ~/ondemand/Scalable-Demand-Optimization
 mkdir -p logs
 
 # Run training
-python3 scripts/02_train.py
+python3 scripts/02_train.py --fresh
 
 echo "Job finished: $(date)"
