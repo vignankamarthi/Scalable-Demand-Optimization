@@ -1,0 +1,77 @@
+Job started: Wed Feb 18 08:10:27 PM EST 2026
+Node: c0656
+CPUs: 12
+[20:10:48] ============================================================
+[20:10:48] ZTBus Training Pipeline
+[20:10:48] ============================================================
+[20:10:48] Loading metadata...
+[20:10:48]   Total missions: 1409
+[20:10:48] Loading ALL mission CSVs...
+[20:15:11]   Loaded 48,614,272 rows in 263.2s
+[20:15:11] Forward-filling ITCS columns per mission...
+[20:18:28]   After forward-fill: 47,568,436 rows (197.0s)
+[20:18:28] Mission-level train/test split (80/20)...
+[20:19:16]   Train: 38,370,941 rows (1127 missions)
+[20:19:17]   Test:  9,197,495 rows (282 missions)
+[20:19:17] Computing tercile boundaries on training data...
+[20:19:18]   q1=9.00, q2=20.00
+[20:19:32] Train class distribution:
+[20:19:34]   low: 13,235,446 (34.5%)
+[20:19:36]   medium: 13,240,732 (34.5%)
+[20:19:38]   high: 11,894,763 (31.0%)
+[20:19:38] Feature engineering...
+[20:30:19]   Feature columns: 56
+[20:30:19]   Done in 641.2s
+[20:30:43]   X_train: (37100313, 53), X_test: (9063491, 53)
+[20:30:43]   Features: ['acceleration', 'dayofweek', 'electric_powerDemand', 'gnss_altitude', 'hour', 'is_rush_hour', 'is_weekend', 'lat_deg', 'lon_deg', 'month', 'power_roll_mean_300', 'power_roll_mean_60', 'power_roll_std_300', 'power_roll_std_60', 'route_32', 'route_33', 'route_46', 'route_72', 'route_83', 'route_N1', 'route_N2', 'route_N4', 'speed_kmh', 'speed_roll_mean_300', 'speed_roll_mean_60', 'speed_roll_std_300', 'speed_roll_std_60', 'status_doorIsOpen', 'status_gridIsAvailable', 'status_haltBrakeIsActive', 'status_parkBrakeIsActive', 'stop_Zürich, Albisriederplatz', 'stop_Zürich, Altes Krematorium', 'stop_Zürich, Bahnhof Hardbrücke', 'stop_Zürich, Baslerstrasse', 'stop_Zürich, Bucheggplatz', 'stop_Zürich, Escher-Wyss-Platz', 'stop_Zürich, Flurstrasse', 'stop_Zürich, Geeringstrasse', 'stop_Zürich, Hardplatz', 'stop_Zürich, Hubertus', 'stop_Zürich, In der Ey', 'stop_Zürich, Kappeli', 'stop_Zürich, Letzibach', 'stop_Zürich, Letzipark West', 'stop_Zürich, Milchbuck', 'stop_Zürich, Rosengartenstrasse', 'stop_Zürich, Schiffbau', 'stop_Zürich, Wildbachstrasse', 'stop___other__', 'traction_brakePressure', 'traction_tractionForce', 'year']
+[20:30:43] 
+--- Training: decision_tree ---
+[21:08:37]   Trained in 2273.6s
+[21:13:36]   [checkpoint saved: 1/2 models]
+[21:13:36]   Macro F1:          0.5717
+[21:13:36]   Balanced Accuracy: 0.5712
+[21:13:36]   Predict time:      3.35s
+[21:13:36]     low: P=0.650 R=0.623 F1=0.636
+[21:13:36]     medium: P=0.454 R=0.465 F1=0.459
+[21:13:36]     high: P=0.614 R=0.626 F1=0.620
+[21:13:36] 
+--- Training: random_forest ---
+[23:14:23]   Trained in 7247.4s
+[23:20:36]   [checkpoint saved: 2/2 models]
+[23:20:36]   Macro F1:          0.6613
+[23:20:36]   Balanced Accuracy: 0.6615
+[23:20:36]   Predict time:      73.25s
+[23:20:36]     low: P=0.747 R=0.710 F1=0.728
+[23:20:36]     medium: P=0.540 R=0.547 F1=0.543
+[23:20:36]     high: P=0.698 R=0.728 F1=0.713
+[23:20:36] 
+--- Saving results ---
+[23:20:37]   Summary: /home/kamarthi.v/ondemand/Scalable-Demand-Optimization/results/model_summary.csv
+[23:20:37]   Full results: /home/kamarthi.v/ondemand/Scalable-Demand-Optimization/results/model_results.json
+[23:20:37]   Checkpoint cleared (final results saved)
+[23:20:37] 
+--- Generating confusion matrix plots ---
+[23:20:42]   Saved: cm_decision_tree.png
+[23:20:43]   Saved: cm_random_forest.png
+[23:20:43] 
+--- Feature importance analysis (Random Forest) ---
+[23:20:50]   Saved: feature_importance.png
+[23:20:52]   Saved: feature_group_importance.png
+[23:20:52]   Saved: results/feature_importances.csv
+[23:20:52]   Saved: model_comparison.png
+[23:20:52] 
+============================================================
+[23:20:52] TRAINING COMPLETE
+[23:20:52] ============================================================
+[23:20:52] 
+Tercile boundaries: q1=9.00, q2=20.00
+[23:20:52] Train: 37,100,313 rows, Test: 9,063,491 rows
+[23:20:52] Features: 53
+[23:20:52] 
+Model Rankings (Macro F1):
+[23:20:52]   random_forest         F1=0.6613  BalAcc=0.6615  Train=7247.4s
+[23:20:52]   decision_tree         F1=0.5717  BalAcc=0.5712  Train=2273.6s
+[23:20:52] 
+Results: /home/kamarthi.v/ondemand/Scalable-Demand-Optimization/results/
+[23:20:52] Figures: /home/kamarthi.v/ondemand/Scalable-Demand-Optimization/figures/
+Job finished: Wed Feb 18 11:38:38 PM EST 2026

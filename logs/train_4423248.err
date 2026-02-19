@@ -1,1 +1,0 @@
-/var/spool/slurmd/job4423248/slurm_script: line 26: 3256886 Killed                  python3 scripts/02_train.py --fresh
