@@ -89,7 +89,7 @@ CHECKPOINT_TEMPORAL = os.path.join(RESULTS_EXT_DIR, "checkpoint_temporal.json")
 FRESH_RUN = "--fresh" in sys.argv
 
 # Temporal split: train on missions starting before this date, test on after
-TEMPORAL_CUTOFF = pd.Timestamp("2022-01-01")
+TEMPORAL_CUTOFF = pd.Timestamp("2022-01-01", tz="UTC")
 
 
 # ---------------------------------------------------------------------------

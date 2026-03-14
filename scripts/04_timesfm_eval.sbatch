@@ -1,12 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=ztbus_timesfm
-#SBATCH --partition=gpu
+#SBATCH --partition=short
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
-#SBATCH --gres=gpu:1
-#SBATCH --time=04:00:00
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=128G
+#SBATCH --time=08:00:00
 #SBATCH --output=logs/timesfm_%j.log
 #SBATCH --error=logs/timesfm_%j.err
 #SBATCH --mail-type=END,FAIL
@@ -97,7 +96,7 @@ mkdir -p figures/timesfm
 # -----------------------------------------------------------------------
 
 echo "Starting TimesFM zero-shot evaluation..."
-python scripts/04_timesfm_eval.py
+python scripts/04_timesfm_eval.py --cpu
 
 # Uncomment to also run fine-tuned:
 # python scripts/04_timesfm_eval.py --finetune
