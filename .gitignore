@@ -1,11 +1,14 @@
 # Project context (local only)
 CLAUDE.md
 MEMORY.md
+ANTIPATTERNS.md
 CLUSTER_SETUP.md
 REFACTOR.md
 
 # Python
 .venv/
+.venv-1/
+.venv-timesfm/
 __pycache__/
 *.pyc
 *.pyo
