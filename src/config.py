@@ -66,6 +66,8 @@ FEATURE_GROUP_MAP = {
     # Status
     "status_doorIsOpen": "Status", "status_gridIsAvailable": "Status",
     "status_haltBrakeIsActive": "Status", "status_parkBrakeIsActive": "Status",
+    # COVID
+    "covid_flag": "COVID", "covid_intensity": "COVID",
 }
 # Prefix rules for one-hot encoded categoricals
 FEATURE_GROUP_PREFIXES = {"route_": "Categorical", "stop_": "Categorical"}

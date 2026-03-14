@@ -7,6 +7,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from src.config import ROLLING_WINDOWS
+from src.covid import build_covid_features
 from src.preprocessing import extract_temporal_features, apply_unit_conversions
 
 
@@ -114,6 +115,9 @@ def build_feature_set(
 
     # Temporal features
     result = extract_temporal_features(result)
+
+    # COVID restriction features (Oxford Stringency Index, Switzerland)
+    result = build_covid_features(result, time_col="time_iso")
 
     # Rolling features (per-mission to prevent boundary bleeding)
     if "mission_name" in result.columns:
