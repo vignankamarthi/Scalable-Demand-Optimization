@@ -144,14 +144,14 @@ def load_timesfm_model():
     tfm = timesfm.TimesFM_2p5_200M_torch.from_pretrained(
         "google/timesfm-2.5-200m-pytorch"
     )
-    tfm.forecast_config = timesfm.ForecastConfig(
+    config = timesfm.ForecastConfig(
         max_context=CONTEXT_LEN,
         max_horizon=HORIZON_LEN,
         per_core_batch_size=BATCH_SIZE,
     )
     log("  Loaded: google/timesfm-2.5-200m-pytorch")
     log("  Compiling model...")
-    tfm.compile()
+    tfm.compile(config)
     log("  Model compiled and ready for inference.")
     return tfm
 
