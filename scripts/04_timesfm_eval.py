@@ -74,7 +74,7 @@ os.makedirs(RESULTS_TFM_DIR, exist_ok=True)
 os.makedirs(FIGURES_TFM_DIR, exist_ok=True)
 
 # Temporal split (same as 03_train_extended.py for fair comparison)
-TEMPORAL_CUTOFF = pd.Timestamp("2022-01-01")
+TEMPORAL_CUTOFF = pd.Timestamp("2022-01-01", tz="UTC")
 
 # TimesFM inference parameters
 CONTEXT_LEN = 512       # seconds of history fed to model per window
