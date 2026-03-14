@@ -167,6 +167,16 @@ def main() -> None:
     X_test, y_test = X_test[test_mask], y_test[test_mask]
     test_feat_aligned = test_feat[test_mask].copy()
 
+    # Drop one-hot columns from test_feat_aligned that weren't in training
+    # (build_prediction_frame uses all non-metadata columns for predict())
+    extra_cols = set(test_feat_aligned.columns) - set(common_cols) - {
+        "demand_class", "itcs_numberOfPassengers", "mission_name",
+        "time_iso", "time_unix",
+    }
+    if extra_cols:
+        log(f"  Dropping {len(extra_cols)} test-only feature columns")
+        test_feat_aligned = test_feat_aligned.drop(columns=list(extra_cols))
+
     log(f"  X_train: {X_train.shape}, X_test: {X_test.shape}")
 
     # 6. Train all models

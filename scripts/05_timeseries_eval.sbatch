@@ -4,8 +4,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
-#SBATCH --time=04:00:00
+#SBATCH --mem=256G
+#SBATCH --time=08:00:00
 #SBATCH --output=logs/ts_eval_%j.log
 #SBATCH --error=logs/ts_eval_%j.err
 #SBATCH --mail-type=END,FAIL
