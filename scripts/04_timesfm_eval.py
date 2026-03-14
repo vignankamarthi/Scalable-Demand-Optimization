@@ -150,6 +150,9 @@ def load_timesfm_model():
         per_core_batch_size=BATCH_SIZE,
     )
     log("  Loaded: google/timesfm-2.5-200m-pytorch")
+    log("  Compiling model...")
+    tfm.compile()
+    log("  Model compiled and ready for inference.")
     return tfm
 
 
