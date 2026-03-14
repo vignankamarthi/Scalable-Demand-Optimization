@@ -124,64 +124,32 @@ def detect_backend() -> str:
 # TimesFM loader
 # ---------------------------------------------------------------------------
 
-def load_timesfm_model(backend: str):
+def load_timesfm_model():
     """
-    Load TimesFM 2.0-500m (PyTorch) from HuggingFace.
+    Load TimesFM 2.5-200m (PyTorch) from HuggingFace.
 
-    Uses the 500m checkpoint (better accuracy, longer context than 200m).
-    Falls back to 200m if 500m download fails (less common on HPC due to
-    network restrictions).
-
-    Returns a loaded timesfm.TimesFm instance ready for inference.
+    Uses the TimesFM 2.5 API (pip install timesfm).
+    Returns a loaded model instance ready for inference.
     """
     try:
         import timesfm
     except ImportError:
         raise ImportError(
             "timesfm not installed. Install with:\n"
-            "  git clone https://github.com/google-research/timesfm.git\n"
-            "  cd timesfm && pip install -e .[torch]\n"
+            "  pip install git+https://github.com/google-research/timesfm.git\n"
             "See scripts/04_timesfm_eval.sbatch for full setup."
         )
 
-    log("Loading TimesFM 2.0-500m checkpoint...")
-    try:
-        tfm = timesfm.TimesFm(
-            hparams=timesfm.TimesFmHparams(
-                backend=backend,
-                per_core_batch_size=BATCH_SIZE,
-                horizon_len=HORIZON_LEN,
-                input_patch_len=32,
-                output_patch_len=128,
-                num_layers=50,
-                model_dims=1280,
-                use_positional_embedding=False,
-                context_len=CONTEXT_LEN,
-            ),
-            checkpoint=timesfm.TimesFmCheckpoint(
-                huggingface_repo_id="google/timesfm-2.0-500m-pytorch"
-            ),
-        )
-        log("  Loaded: timesfm-2.0-500m-pytorch")
-    except Exception as e:
-        log(f"  500m load failed ({e}), falling back to 200m checkpoint...")
-        tfm = timesfm.TimesFm(
-            hparams=timesfm.TimesFmHparams(
-                backend=backend,
-                per_core_batch_size=BATCH_SIZE,
-                horizon_len=HORIZON_LEN,
-                input_patch_len=32,
-                output_patch_len=128,
-                num_layers=20,
-                model_dims=1280,
-                context_len=min(CONTEXT_LEN, 512),
-            ),
-            checkpoint=timesfm.TimesFmCheckpoint(
-                huggingface_repo_id="google/timesfm-1.0-200m-pytorch"
-            ),
-        )
-        log("  Loaded: timesfm-1.0-200m-pytorch (fallback)")
-
+    log("Loading TimesFM 2.5-200m checkpoint from HuggingFace...")
+    tfm = timesfm.TimesFM_2p5_200M_torch.from_pretrained(
+        "google/timesfm-2.5-200m-pytorch"
+    )
+    tfm.forecast_config = timesfm.ForecastConfig(
+        max_context=CONTEXT_LEN,
+        max_horizon=HORIZON_LEN,
+        per_core_batch_size=BATCH_SIZE,
+    )
+    log("  Loaded: google/timesfm-2.5-200m-pytorch")
     return tfm
 
 
@@ -283,10 +251,10 @@ def run_inference_on_missions(
         forecasts = []
         for batch_start in range(0, len(windows), BATCH_SIZE):
             batch = windows[batch_start: batch_start + BATCH_SIZE]
-            # TimesFM expects list of arrays; frequency=0 (high-freq, default)
+            # TimesFM 2.5 API: forecast(horizon, inputs)
             point_forecast, _ = tfm.forecast(
+                horizon=HORIZON_LEN,
                 inputs=batch,
-                freq=[0] * len(batch),
             )
             # point_forecast shape: (batch_size, horizon_len)
             # Take first horizon step
@@ -522,7 +490,7 @@ test_df["demand_class"] = assign_demand_class(
 
 log("\n[5] Loading TimesFM model...")
 backend = detect_backend()
-tfm = load_timesfm_model(backend)
+tfm = load_timesfm_model()
 
 # -----------------------------------------------------------------------
 # 6. Zero-shot inference
@@ -592,7 +560,7 @@ try:
     pax_sample = sample_df["itcs_numberOfPassengers"].values.astype(float)
     if len(pax_sample) > MIN_CONTEXT:
         ctx = _interpolate_nans(pax_sample[:CONTEXT_LEN])
-        forecast_val, _ = tfm.forecast(inputs=[ctx], freq=[0])
+        forecast_val, _ = tfm.forecast(horizon=HORIZON_LEN, inputs=[ctx])
         plot_forecast_sample(
             ctx, forecast_val[0, 0], pax_sample[CONTEXT_LEN] if len(pax_sample) > CONTEXT_LEN else np.nan,
             q1, q2, sample_mission,
