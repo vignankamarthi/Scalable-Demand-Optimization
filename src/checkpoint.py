@@ -9,6 +9,7 @@ Uses atomic write (tmp + os.replace) to prevent corruption from signals.
 import json
 import os
 
+import joblib
 import numpy as np
 
 
@@ -64,3 +65,40 @@ def save_checkpoint(all_results, path):
     with open(tmp_path, "w") as f:
         json.dump(serializable, f, indent=2)
     os.replace(tmp_path, path)
+
+
+def save_trained_models(models: dict, path: str) -> None:
+    """
+    Save trained sklearn/xgboost model objects to disk via joblib.
+
+    Parameters
+    ----------
+    models : dict
+        Model name -> fitted estimator.
+    path : str
+        Path to the joblib checkpoint file.
+    """
+    tmp_path = path + ".tmp"
+    joblib.dump(models, tmp_path)
+    os.replace(tmp_path, path)
+
+
+def load_trained_models(path: str, fresh: bool = False) -> dict | None:
+    """
+    Load previously trained model objects from joblib checkpoint.
+
+    Parameters
+    ----------
+    path : str
+        Path to the joblib checkpoint file.
+    fresh : bool
+        If True, ignore existing checkpoint and return None.
+
+    Returns
+    -------
+    dict or None
+        Model name -> fitted estimator, or None if no checkpoint.
+    """
+    if fresh or not os.path.exists(path):
+        return None
+    return joblib.load(path)

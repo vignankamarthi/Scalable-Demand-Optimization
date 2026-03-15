@@ -10,7 +10,10 @@ import os
 import numpy as np
 import pytest
 
-from src.checkpoint import load_checkpoint, save_checkpoint
+from src.checkpoint import (
+    load_checkpoint, save_checkpoint,
+    save_trained_models, load_trained_models,
+)
 
 
 # -----------------------------------------------------------------------
@@ -209,3 +212,67 @@ class TestIncrementalCheckpointing:
         all_models = ["decision_tree", "random_forest"]
         to_train = [m for m in all_models if m not in loaded]
         assert to_train == []
+
+
+# -----------------------------------------------------------------------
+# Trained model checkpoint tests (joblib)
+# -----------------------------------------------------------------------
+
+class TestSaveTrainedModels:
+    def test_creates_file(self, tmp_path):
+        from sklearn.tree import DecisionTreeClassifier
+        models = {"dt": DecisionTreeClassifier().fit([[1], [2], [3]], [0, 1, 0])}
+        path = str(tmp_path / "models.joblib")
+        save_trained_models(models, path)
+        assert os.path.exists(path)
+
+    def test_no_tmp_file_remains(self, tmp_path):
+        from sklearn.tree import DecisionTreeClassifier
+        models = {"dt": DecisionTreeClassifier().fit([[1], [2], [3]], [0, 1, 0])}
+        path = str(tmp_path / "models.joblib")
+        save_trained_models(models, path)
+        assert not os.path.exists(path + ".tmp")
+
+    def test_roundtrip_preserves_model_names(self, tmp_path):
+        from sklearn.tree import DecisionTreeClassifier
+        from sklearn.ensemble import RandomForestClassifier
+        models = {
+            "dt": DecisionTreeClassifier().fit([[1], [2], [3]], [0, 1, 0]),
+            "rf": RandomForestClassifier(n_estimators=5).fit([[1], [2], [3]], [0, 1, 0]),
+        }
+        path = str(tmp_path / "models.joblib")
+        save_trained_models(models, path)
+        loaded = load_trained_models(path)
+        assert set(loaded.keys()) == {"dt", "rf"}
+
+    def test_roundtrip_predictions_match(self, tmp_path):
+        from sklearn.tree import DecisionTreeClassifier
+        X = [[1], [2], [3]]
+        model = DecisionTreeClassifier().fit(X, [0, 1, 0])
+        original_preds = model.predict(X)
+        path = str(tmp_path / "models.joblib")
+        save_trained_models({"dt": model}, path)
+        loaded = load_trained_models(path)
+        np.testing.assert_array_equal(loaded["dt"].predict(X), original_preds)
+
+
+class TestLoadTrainedModels:
+    def test_returns_none_if_no_file(self, tmp_path):
+        path = str(tmp_path / "nonexistent.joblib")
+        assert load_trained_models(path) is None
+
+    def test_returns_none_if_fresh(self, tmp_path):
+        from sklearn.tree import DecisionTreeClassifier
+        models = {"dt": DecisionTreeClassifier().fit([[1], [2], [3]], [0, 1, 0])}
+        path = str(tmp_path / "models.joblib")
+        save_trained_models(models, path)
+        assert load_trained_models(path, fresh=True) is None
+
+    def test_overwrites_existing(self, tmp_path):
+        from sklearn.tree import DecisionTreeClassifier
+        path = str(tmp_path / "models.joblib")
+        save_trained_models({"dt": DecisionTreeClassifier().fit([[1], [2]], [0, 1])}, path)
+        save_trained_models({"dt2": DecisionTreeClassifier().fit([[1], [2]], [0, 1])}, path)
+        loaded = load_trained_models(path)
+        assert "dt2" in loaded
+        assert "dt" not in loaded

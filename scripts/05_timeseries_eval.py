@@ -38,6 +38,7 @@ from src.model_pipeline import (
     get_model_configs,
 )
 from src.ts_evaluation import run_timeseries_evaluation
+from src.checkpoint import save_trained_models, load_trained_models
 
 try:
     import xgboost as xgb
@@ -176,30 +177,41 @@ def main() -> None:
 
     log(f"  X_train: {X_train.shape}, X_test: {X_test.shape}")
 
-    # 6. Train all models
-    log("\n[6] Training models...")
-    configs = get_extended_model_configs(seed=RANDOM_SEED)
-    trained_models = {}
+    # 6. Train all models (with joblib checkpointing)
+    MODEL_CKPT = os.path.join("results", "timeseries", "trained_models.joblib")
+    cached = load_trained_models(MODEL_CKPT)
 
-    # Label encoder for XGBoost (needs integer targets)
-    le = LabelEncoder()
-    le.fit(["low", "medium", "high"])
+    if cached is not None:
+        log("\n[6] Loading cached trained models from checkpoint...")
+        trained_models = cached
+        for name in trained_models:
+            log(f"  [checkpoint] {name}: loaded")
+    else:
+        log("\n[6] Training models (no checkpoint found)...")
+        configs = get_extended_model_configs(seed=RANDOM_SEED)
+        trained_models = {}
 
-    for model_name, cfg in configs.items():
-        log(f"  Fitting {model_name}...")
-        t0 = time.time()
+        # Label encoder for XGBoost (needs integer targets)
+        le = LabelEncoder()
+        le.fit(["low", "medium", "high"])
 
-        if model_name == "xgboost":
-            # Wrap XGBoost so run_timeseries_evaluation gets string labels back
-            wrapper = XGBStringLabelWrapper(cfg["model"], le)
-            wrapper.fit(X_train, y_train)
-            trained_models[model_name] = wrapper
-        else:
-            cfg["model"].fit(X_train, y_train)
-            trained_models[model_name] = cfg["model"]
+        for model_name, cfg in configs.items():
+            log(f"  Fitting {model_name}...")
+            t0 = time.time()
 
-        elapsed = time.time() - t0
-        log(f"    Done in {elapsed:.1f}s")
+            if model_name == "xgboost":
+                wrapper = XGBStringLabelWrapper(cfg["model"], le)
+                wrapper.fit(X_train, y_train)
+                trained_models[model_name] = wrapper
+            else:
+                cfg["model"].fit(X_train, y_train)
+                trained_models[model_name] = cfg["model"]
+
+            elapsed = time.time() - t0
+            log(f"    Done in {elapsed:.1f}s")
+
+        save_trained_models(trained_models, MODEL_CKPT)
+        log(f"  [checkpoint saved: {len(trained_models)} models -> {MODEL_CKPT}]")
 
     # 7. Run time-series evaluation
     log("\n[7] Running time-series evaluation...")
