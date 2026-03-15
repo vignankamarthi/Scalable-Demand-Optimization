@@ -66,9 +66,9 @@ os.makedirs(FIGURES_TS_DIR, exist_ok=True)
 
 # COVID period definitions (matches src/covid.py logic)
 COVID_PERIODS = {
-    "pre_covid":    (pd.Timestamp("2019-01-01"), pd.Timestamp("2020-02-29")),
-    "restrictions": (pd.Timestamp("2020-03-01"), pd.Timestamp("2022-03-31")),
-    "post_covid":   (pd.Timestamp("2022-04-01"), pd.Timestamp("2022-12-31")),
+    "pre_covid":    (pd.Timestamp("2019-01-01", tz="UTC"), pd.Timestamp("2020-02-29", tz="UTC")),
+    "restrictions": (pd.Timestamp("2020-03-01", tz="UTC"), pd.Timestamp("2022-03-31", tz="UTC")),
+    "post_covid":   (pd.Timestamp("2022-04-01", tz="UTC"), pd.Timestamp("2022-12-31", tz="UTC")),
 }
 
 ACF_NLAGS = 60      # seconds of autocorrelation to compute
