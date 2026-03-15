@@ -1,0 +1,49 @@
+{
+  "zero_shot": {
+    "macro_f1": 0.9675311896988208,
+    "balanced_accuracy": 0.9638130224260263,
+    "confusion_matrix": [
+      [
+        80080,
+        5438,
+        8
+      ],
+      [
+        101,
+        106727,
+        4788
+      ],
+      [
+        7,
+        147,
+        142119
+      ]
+    ],
+    "per_class": {
+      "low": {
+        "precision": 0.9986531650621041,
+        "recall": 0.9363234571943034,
+        "f1": 0.9664844249731465,
+        "support": 85526.0
+      },
+      "medium": {
+        "precision": 0.9502724553030842,
+        "recall": 0.9561980361238532,
+        "f1": 0.9532260369404452,
+        "support": 111616.0
+      },
+      "high": {
+        "precision": 0.9673552734574413,
+        "recall": 0.9989175739599221,
+        "f1": 0.9828831071828706,
+        "support": 142273.0
+      }
+    },
+    "inference_time_s": 11526.37,
+    "finetune_time_s": null,
+    "mode": "zero_shot",
+    "backend": "cpu",
+    "context_len": 512,
+    "stride": 60
+  }
+}
