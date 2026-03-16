@@ -20,12 +20,12 @@ echo "Node: $(hostname)"
 echo "CPUs: $SLURM_CPUS_PER_TASK"
 
 # Work from project root
-cd ~/ondemand/Scalable-Demand-Optimization
+cd /projects/SensingandInnovationLab/vignankamarthi/Scalable-Demand-Optimization
 
 # Activate virtual environment
 source .venv/bin/activate
 
-# Confirm environment (xgboost 2.1.3 pre-installed in venv)
+# Confirm environment
 python -c "import xgboost; print('XGBoost version:', xgboost.__version__)"
 python -c "import sklearn; print('sklearn version:', sklearn.__version__)"
 

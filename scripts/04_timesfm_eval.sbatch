@@ -1,11 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=ztbus_timesfm
-#SBATCH --partition=short
+#SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
-#SBATCH --time=08:00:00
+#SBATCH --cpus-per-task=8
+#SBATCH --gres=gpu:1
+#SBATCH --mem=64G
+#SBATCH --time=02:00:00
 #SBATCH --output=logs/timesfm_%j.log
 #SBATCH --error=logs/timesfm_%j.err
 #SBATCH --mail-type=END,FAIL
@@ -13,21 +14,15 @@
 # -----------------------------------------------------------------------
 # ZTBus TimesFM evaluation — zero-shot (+ optional fine-tuning)
 # Run from repo root: sbatch scripts/04_timesfm_eval.sbatch
-#
-# If no GPU partition is available on the cluster, change to:
-#   #SBATCH --partition=short
-#   #SBATCH --mem=128G
-# and add --cpu flag to the python call below.
-# CPU-only inference will take significantly longer (~4-8hrs).
 # -----------------------------------------------------------------------
 
 echo "Job started: $(date)"
 echo "Node: $(hostname)"
 echo "GPUs: $SLURM_GPUS_ON_NODE"
-nvidia-smi 2>/dev/null || echo "nvidia-smi not available (CPU node)"
+nvidia-smi 2>/dev/null || echo "nvidia-smi not available"
 
 # Work from project root
-cd ~/ondemand/Scalable-Demand-Optimization
+cd /projects/SensingandInnovationLab/vignankamarthi/Scalable-Demand-Optimization
 
 # Activate Python 3.11 venv with TimesFM pre-installed
 source .venv-timesfm/bin/activate
@@ -63,7 +58,7 @@ mkdir -p figures/timesfm
 # -----------------------------------------------------------------------
 
 echo "Starting TimesFM zero-shot evaluation..."
-python scripts/04_timesfm_eval.py --cpu
+python scripts/04_timesfm_eval.py
 
 # Uncomment to also run fine-tuned:
 # python scripts/04_timesfm_eval.py --finetune

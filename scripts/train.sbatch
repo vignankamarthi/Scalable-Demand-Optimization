@@ -14,7 +14,7 @@ echo "Node: $(hostname)"
 echo "CPUs: $SLURM_CPUS_PER_TASK"
 
 # Work from project root
-cd ~/ondemand/Scalable-Demand-Optimization
+cd /projects/SensingandInnovationLab/vignankamarthi/Scalable-Demand-Optimization
 
 # Activate environment
 source .venv/bin/activate

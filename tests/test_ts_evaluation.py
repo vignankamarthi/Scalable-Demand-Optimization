@@ -84,7 +84,7 @@ def _make_pred_frame(
     rows_per_mission = n_rows // n_missions
 
     frames = []
-    base = pd.Timestamp(start_date)
+    base = pd.Timestamp(start_date, tz="UTC")
     for i in range(n_missions):
         ts = pd.date_range(
             base + pd.Timedelta(days=i * 10),
@@ -248,32 +248,32 @@ class TestMacroF1FromFrame:
 class TestLabelCovidPeriod:
 
     def test_pre_covid_dates(self):
-        ts = pd.Series(pd.to_datetime(["2019-06-15", "2020-01-10"]))
+        ts = pd.Series(pd.to_datetime(["2019-06-15", "2020-01-10"]).tz_localize("UTC"))
         result = label_covid_period(ts)
         assert (result == "pre_covid").all()
 
     def test_restriction_dates(self):
-        ts = pd.Series(pd.to_datetime(["2020-04-01", "2021-01-15", "2022-02-01"]))
+        ts = pd.Series(pd.to_datetime(["2020-04-01", "2021-01-15", "2022-02-01"]).tz_localize("UTC"))
         result = label_covid_period(ts)
         assert (result == "restrictions").all()
 
     def test_post_covid_dates(self):
-        ts = pd.Series(pd.to_datetime(["2022-05-01", "2022-11-30"]))
+        ts = pd.Series(pd.to_datetime(["2022-05-01", "2022-11-30"]).tz_localize("UTC"))
         result = label_covid_period(ts)
         assert (result == "post_covid").all()
 
     def test_outside_dataset(self):
-        ts = pd.Series(pd.to_datetime(["2018-01-01", "2023-06-01"]))
+        ts = pd.Series(pd.to_datetime(["2018-01-01", "2023-06-01"]).tz_localize("UTC"))
         result = label_covid_period(ts)
         assert (result == "outside_dataset").all()
 
     def test_preserves_index(self):
-        ts = pd.Series(pd.to_datetime(["2020-06-01", "2019-03-01"]), index=[10, 20])
+        ts = pd.Series(pd.to_datetime(["2020-06-01", "2019-03-01"]).tz_localize("UTC"), index=[10, 20])
         result = label_covid_period(ts)
         assert list(result.index) == [10, 20]
 
     def test_returns_series(self):
-        ts = pd.Series(pd.to_datetime(["2021-01-01"]))
+        ts = pd.Series(pd.to_datetime(["2021-01-01"]).tz_localize("UTC"))
         assert isinstance(label_covid_period(ts), pd.Series)
 
 

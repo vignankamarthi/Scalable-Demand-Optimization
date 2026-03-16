@@ -1,34 +1,32 @@
 #!/bin/bash
 #SBATCH --job-name=ztbus_ts_eval
-#SBATCH --partition=short
+#SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
+#SBATCH --gres=gpu:h200:1
 #SBATCH --mem=192G
-#SBATCH --time=08:00:00
+#SBATCH --time=04:00:00
 #SBATCH --output=logs/ts_eval_%j.log
 #SBATCH --error=logs/ts_eval_%j.err
 #SBATCH --mail-type=END,FAIL
 
 # -----------------------------------------------------------------------
-# ZTBus time-series evaluation
-# Runs standalone: re-trains models then runs all temporal metrics/plots.
+# ZTBus time-series evaluation (Explorer GPU node)
+# Trains DT + RF (CPU) + XGBoost (GPU via gpu_hist), then runs 6 temporal
+# diagnostics. Checkpoints trained models to skip retraining on resubmit.
 # Run from repo root: sbatch scripts/05_timeseries_eval.sbatch
-#
-# Note: if you want to run this AFTER 03_train_extended.py on the same
-# job allocation, you can chain them:
-#   sbatch --dependency=afterok:<jobid_of_03> scripts/05_timeseries_eval.sbatch
 # -----------------------------------------------------------------------
 
 echo "Job started: $(date)"
 echo "Node: $(hostname)"
+echo "GPUs: $SLURM_GPUS_ON_NODE"
+nvidia-smi 2>/dev/null || echo "nvidia-smi not available"
 
 # Work from project root
-cd ~/ondemand/Scalable-Demand-Optimization
+cd /projects/SensingandInnovationLab/vignankamarthi/Scalable-Demand-Optimization
 
 source .venv/bin/activate
-
-pip install statsmodels --quiet
 
 mkdir -p logs
 mkdir -p results/timeseries
