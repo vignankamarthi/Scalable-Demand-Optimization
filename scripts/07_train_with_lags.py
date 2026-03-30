@@ -210,7 +210,7 @@ log("\n[3] Building train/test splits...")
 
 # Pooled
 train_pooled, test_pooled = mission_stratified_split(
-    df, test_size=0.2, random_state=RANDOM_SEED)
+    df, test_size=0.2, seed=RANDOM_SEED)
 log(f"  Pooled  -- train: {len(train_pooled):,} | test: {len(test_pooled):,}")
 
 # Temporal
