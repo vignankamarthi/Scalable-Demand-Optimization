@@ -78,6 +78,26 @@ def compute_rolling_features(
     return result
 
 
+def compute_lag_features(
+    df: pd.DataFrame,
+    lags: list[int] | None = None,
+) -> pd.DataFrame:
+    """
+    Create lagged versions of passenger count.
+    At 1Hz sampling, lag N = passenger count N seconds ago.
+
+    Default lags: [60, 300] (1 minute, 5 minutes) to match rolling window offsets.
+    First N rows per lag become NaN (no prior data).
+    """
+    if lags is None:
+        lags = [60, 300]
+
+    result = df.copy()
+    for lag in lags:
+        result[f"pax_lag_{lag}"] = result["itcs_numberOfPassengers"].shift(lag)
+    return result
+
+
 def compute_acceleration(df: pd.DataFrame) -> pd.DataFrame:
     """
     Compute acceleration as the first difference of vehicle speed.
@@ -136,6 +156,15 @@ def build_feature_set(
         result = pd.concat(parts)
     else:
         result = compute_acceleration(result)
+
+    # Lag features on passenger count (per-mission to prevent boundary bleeding)
+    if "mission_name" in result.columns:
+        parts = []
+        for _, group in result.groupby("mission_name", sort=False):
+            parts.append(compute_lag_features(group))
+        result = pd.concat(parts)
+    else:
+        result = compute_lag_features(result)
 
     # Categorical encoding
     if "itcs_busRoute" in result.columns:

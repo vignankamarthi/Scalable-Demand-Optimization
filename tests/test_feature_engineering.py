@@ -11,6 +11,7 @@ from src.feature_engineering import (
     encode_stop_name,
     compute_rolling_features,
     compute_acceleration,
+    compute_lag_features,
     build_feature_set,
 )
 
@@ -383,3 +384,117 @@ class TestMissionBoundarySafety:
         mission_b = result[result["mission_name"] == "mission_B"]
         assert mission_b["power_roll_std_5"].iloc[:4].isna().all(), \
             "Power roll std bled across mission boundary"
+
+    def test_lag_features_do_not_bleed_across_missions(self):
+        """First rows of mission_B lag features should be NaN, not values from mission_A."""
+        n = 100  # enough rows for default lag_60
+        ts1 = pd.date_range("2019-04-30T07:00:00Z", periods=n, freq="1s")
+        ts2 = pd.date_range("2019-04-30T09:00:00Z", periods=n, freq="1s")
+        base_unix = 1556594336
+
+        def make_mission(ts, name, pax_val, offset=0):
+            return pd.DataFrame({
+                "time_iso": ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "time_unix": [base_unix + offset + i for i in range(n)],
+                "itcs_busRoute": ["83"] * n,
+                "itcs_stopName": ["StopA"] * n,
+                "itcs_numberOfPassengers": [float(pax_val)] * n,
+                "odometry_vehicleSpeed": [5.0] * n,
+                "temperature_ambient": [283.15] * n,
+                "electric_powerDemand": [10000.0] * n,
+                "traction_tractionForce": [500.0] * n,
+                "traction_brakePressure": [0.0] * n,
+                "gnss_altitude": [408.0] * n,
+                "gnss_latitude": [0.8267] * n,
+                "gnss_longitude": [0.1491] * n,
+                "status_doorIsOpen": [0] * n,
+                "mission_name": [name] * n,
+            })
+
+        df = pd.concat([
+            make_mission(ts1, "mission_A", 10),
+            make_mission(ts2, "mission_B", 50, offset=7200),
+        ], ignore_index=True)
+
+        result = build_feature_set(df, rolling_windows=[5])
+        mission_b = result[result["mission_name"] == "mission_B"]
+        # Default lag_60: first 60 rows of mission_B should be NaN
+        assert mission_b["pax_lag_60"].iloc[:60].isna().all(), \
+            "Lag features bled across mission boundary"
+        # After lag boundary, values should be 50 (mission_B's pax), not 10 (mission_A's)
+        assert mission_b["pax_lag_60"].iloc[60] == 50.0, \
+            "Lag feature picked up wrong mission's value"
+
+
+# -----------------------------------------------------------------------
+# compute_lag_features tests
+# -----------------------------------------------------------------------
+
+class TestComputeLagFeatures:
+    """Tests for passenger count lag feature computation."""
+
+    def test_basic_lag_values(self):
+        """Lag of 2 rows should shift values by 2 positions."""
+        df = pd.DataFrame({
+            "itcs_numberOfPassengers": [10, 20, 30, 40, 50],
+        })
+        result = compute_lag_features(df, lags=[2])
+        assert result["pax_lag_2"].iloc[2] == 10
+        assert result["pax_lag_2"].iloc[3] == 20
+        assert result["pax_lag_2"].iloc[4] == 30
+
+    def test_first_n_rows_are_nan(self):
+        """First N rows for lag N should be NaN."""
+        df = pd.DataFrame({
+            "itcs_numberOfPassengers": [5, 10, 15, 20, 25, 30],
+        })
+        result = compute_lag_features(df, lags=[3])
+        assert result["pax_lag_3"].iloc[:3].isna().all()
+        assert result["pax_lag_3"].iloc[3:].notna().all()
+
+    def test_multiple_lags(self):
+        """Multiple lag values should produce multiple columns."""
+        df = pd.DataFrame({
+            "itcs_numberOfPassengers": list(range(20)),
+        })
+        result = compute_lag_features(df, lags=[2, 5])
+        assert "pax_lag_2" in result.columns
+        assert "pax_lag_5" in result.columns
+
+    def test_default_lags(self):
+        """Default lags should be [60, 300]."""
+        df = pd.DataFrame({
+            "itcs_numberOfPassengers": list(range(400)),
+        })
+        result = compute_lag_features(df)
+        assert "pax_lag_60" in result.columns
+        assert "pax_lag_300" in result.columns
+
+    def test_preserves_other_columns(self):
+        """Non-lagged columns should be unchanged."""
+        df = pd.DataFrame({
+            "itcs_numberOfPassengers": [1, 2, 3, 4],
+            "other_col": ["a", "b", "c", "d"],
+        })
+        result = compute_lag_features(df, lags=[1])
+        assert list(result["other_col"]) == ["a", "b", "c", "d"]
+
+    def test_does_not_modify_input(self):
+        """Input DataFrame should not be mutated."""
+        df = pd.DataFrame({
+            "itcs_numberOfPassengers": [10, 20, 30],
+        })
+        original_cols = set(df.columns)
+        _ = compute_lag_features(df, lags=[1])
+        assert set(df.columns) == original_cols
+
+    def test_lag_with_nan_in_source(self):
+        """NaN values in source column should propagate correctly in lags."""
+        df = pd.DataFrame({
+            "itcs_numberOfPassengers": [np.nan, 10, np.nan, 20, 30],
+        })
+        result = compute_lag_features(df, lags=[1])
+        # lag_1 at index 1 should be NaN (from index 0)
+        assert np.isnan(result["pax_lag_1"].iloc[1])
+        # lag_1 at index 2 should be 10 (from index 1)
+        assert result["pax_lag_1"].iloc[2] == 10
