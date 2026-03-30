@@ -14,8 +14,9 @@ The ZTBus dataset contains 1,409 trolleybus missions recorded at 1-second resolu
 **This repository builds a full classification pipeline**:
 - **Task**: 3-class ridership demand classification (low / medium / high)
 - **Key Insight**: Forward-filling passenger counts between stops (physically valid -- count is constant between boarding events) transforms 0.9% usable data into 100%
-- **Models**: Decision Tree, Random Forest
-- **Evaluation**: Macro F1, balanced accuracy, per-class confusion matrices
+- **Models**: Decision Tree, Random Forest, XGBoost, ARIMA baseline, TimesFM (foundation model)
+- **Temporal Analysis**: Stationarity testing (ADF/KPSS), autocorrelation diagnostics (ACF/PACF), lag feature engineering, foundation model embedding extraction
+- **Evaluation**: Macro F1, balanced accuracy, per-class confusion matrices; pooled and temporal (pre-2022 train, 2022 test) frameworks
 
 ## The Problem: Urban Transit Demand Prediction
 
@@ -37,18 +38,29 @@ Scalable-Demand-Optimization/
 │   ├── config.py               # Centralized paths, constants, hyperparameters
 │   ├── data_loading.py         # Metadata parsing, stratified sampling, CSV loading
 │   ├── preprocessing.py        # Unit conversions, temporal features, forward-fill
-│   ├── feature_engineering.py  # Categorical encoding, rolling windows, acceleration
+│   ├── feature_engineering.py  # Categorical encoding, rolling windows, acceleration, lag features
 │   ├── target.py               # Tercile binning, demand class assignment
-│   └── model_pipeline.py       # Train/test split, model configs, evaluation
-├── tests/                      # 150 tests (TDD -- all written before implementation)
+│   ├── model_pipeline.py       # Train/test split, model configs, evaluation
+│   ├── timeseries.py           # Stationarity tests (ADF/KPSS), ACF/PACF, hourly aggregation
+│   ├── arima.py                # ARIMA fitting (AIC grid search) and forecasting
+│   ├── timesfm_features.py     # TimesFM embedding loading and feature integration
+│   ├── covid.py                # COVID restriction features (Oxford Stringency Index)
+│   └── checkpoint.py           # Atomic JSON checkpointing for long-running jobs
+├── tests/                      # 235 tests (TDD -- all written before implementation)
 ├── scripts/
 │   ├── 01_eda.py               # Exploratory data analysis (11 figures)
-│   ├── 02_train.py             # Full training pipeline (2 models: DT + RF)
-│   └── train.sbatch            # SLURM batch script for CPU cluster
+│   ├── 02_train.py             # Baseline training pipeline (DT + RF)
+│   ├── 03_train_extended.py    # Extended training (DT + RF + XGBoost, pooled + temporal eval)
+│   ├── 04_timesfm_eval.py      # TimesFM zero-shot/fine-tuned demand classification
+│   ├── 05_timeseries_eda.py    # Time series EDA (stationarity, ACF/PACF at stop + hourly level)
+│   ├── 06_arima_baseline.py    # ARIMA baseline on hourly aggregate ridership
+│   ├── 07_train_with_lags.py   # ML training with passenger count lag features
+│   ├── 08_extract_embeddings.py # TimesFM penultimate-layer embedding extraction (GPU)
+│   └── 09_train_with_embeddings.py # ML training with TimesFM embedding features
 ├── Final-Project-Proposal-Markdown/  # 10-section project proposal
 ├── data/                       # Dataset (gitignored)
-├── figures/                    # EDA and evaluation plots (gitignored)
-├── results/                    # Model metrics and summaries (gitignored)
+├── figures/                    # EDA and evaluation plots
+├── results/                    # Model metrics and summaries
 ├── logs/                       # Training logs (gitignored)
 ├── ML-EXPERIMENT_DESIGN.md     # Full experiment plan, model configs, EDA rationale
 ├── DATASET_README.txt          # Authoritative column definitions from dataset authors
@@ -62,24 +74,45 @@ Features are extracted from the dense (forward-filled) telemetry stream:
 
 - **Temporal**: hour, day of week, month, year, weekend flag, rush hour flag
 - **Sensor**: altitude, power demand, traction force, brake pressure, door state
-- **Kinematic**: speed (km/h), acceleration (m/s^2), rolling mean/std of speed (60s, 300s windows)
+- **Kinematic**: speed (km/h), acceleration (m/s^2), rolling mean/std of speed and power (60s, 300s windows)
 - **Spatial**: latitude/longitude (degrees), route (one-hot), stop name (top-20 + other bucket)
+- **Lag**: passenger count 60 seconds ago, 300 seconds ago (per-mission, no boundary bleeding)
+- **COVID**: restriction flag and intensity from Oxford Stringency Index
+- **TimesFM Embeddings**: 32-dim PCA-reduced representations from TimesFM 2.5-200M penultimate transformer layer
 
 ## Training
 
-Training runs on the NEU Explorer cluster (16 CPUs, 128GB RAM). All stochastic operations seeded for reproducibility.
+Training runs on the NEU Explorer cluster (16 CPUs, 256GB RAM). GPU partition for TimesFM embedding extraction. All stochastic operations seeded for reproducibility.
 
 ```bash
-# Full pipeline (Decision Tree + Random Forest)
-python scripts/02_train.py
+# Baseline (DT + RF + XGBoost, pooled + temporal eval)
+sbatch scripts/03_train_extended.sbatch
 
-# SLURM submission
-sbatch scripts/train.sbatch
+# With lag features
+sbatch scripts/07_train_with_lags.sbatch
+
+# TimesFM embedding extraction (GPU, run first)
+sbatch scripts/08_extract_embeddings.sbatch
+
+# With embeddings (after 08 completes)
+sbatch scripts/09_train_with_embeddings.sbatch
+```
+
+## Time Series Analysis
+
+Stationarity and autocorrelation diagnostics run locally:
+
+```bash
+# ACF/PACF plots, ADF/KPSS tests
+python scripts/05_timeseries_eda.py
+
+# ARIMA baseline (pure temporal, no features)
+python scripts/06_arima_baseline.py
 ```
 
 ## Testing
 
-TDD methodology -- all 150 tests written before implementation. Mock data throughout, no dataset dependency.
+TDD methodology -- all 235 tests written before implementation. Mock data throughout, no dataset dependency.
 
 ```bash
 python -m pytest tests/ -v
@@ -91,10 +124,13 @@ python -m pytest tests/ -v
 |----------|-----------|
 | Forward-fill passenger counts | Physically valid: count constant between stops. Transforms 0.9% to 100% usable data |
 | Mission-level train/test split | Prevents temporal leakage from same-mission observations appearing in both sets |
+| Temporal evaluation framework | Train pre-2022, test 2022+. Simulates real deployment scenario |
 | Tercile boundaries from train only | Prevents information leakage from test distribution |
-| No feature scaling needed | Both models are tree-based; scaling is irrelevant for split-based classifiers |
+| No feature scaling needed | Tree-based models; scaling is irrelevant for split-based classifiers |
 | Top-20 stop encoding | Avoids 147-column explosion; rare stops bucketed as "other" |
 | Rolling windows (60s, 300s) | Captures short-term and medium-term kinematic context |
+| Per-mission lag computation | Prevents boundary bleeding; lag features are NaN at mission start |
+| PCA on TimesFM embeddings | Reduces 1280-dim to 32-dim; fitted on training missions only |
 
 ## License
 
