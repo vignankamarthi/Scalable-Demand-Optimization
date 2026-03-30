@@ -123,10 +123,11 @@ def load_model():
             captured["embeddings"] = output.detach().cpu().numpy()
 
     # Access the underlying module's transformer stack
-    model_module = tfm.model if hasattr(tfm, "model") else tfm
-    transformers = model_module.transformers
-    transformers[-1].register_forward_hook(hook_fn)
-    log(f"  Hook registered on transformer layer {len(transformers) - 1}")
+    # Verified via probe: tfm.model.stacked_xf is a ModuleList of 20 Transformer layers
+    model_module = tfm.model
+    stacked_xf = model_module.stacked_xf
+    stacked_xf[-1].register_forward_hook(hook_fn)
+    log(f"  Hook registered on transformer layer {len(stacked_xf) - 1} (stacked_xf)")
 
     return tfm, captured
 
