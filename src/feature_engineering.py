@@ -80,21 +80,42 @@ def compute_rolling_features(
 
 def compute_lag_features(
     df: pd.DataFrame,
-    lags: list[int] | None = None,
+    stop_lags: list[int] | None = None,
 ) -> pd.DataFrame:
     """
-    Create lagged versions of passenger count.
-    At 1Hz sampling, lag N = passenger count N seconds ago.
+    Create lagged passenger counts at the STOP-EVENT level.
 
-    Default lags: [60, 300] (1 minute, 5 minutes) to match rolling window offsets.
-    First N rows per lag become NaN (no prior data).
+    Instead of shifting by N rows (which on forward-filled data returns
+    the current value ~95% of the time), this computes the passenger count
+    at the Nth previous stop event, then forward-fills the lag value to
+    all 1Hz rows in the current stop interval.
+
+    Requires an 'is_stop_event' boolean column (added by
+    forward_fill_stop_columns) to identify stop boundaries.
+
+    Default stop_lags: [1, 3, 5] (previous stop, 3 stops ago, 5 stops ago).
+    Output columns: pax_stop_lag_1, pax_stop_lag_3, pax_stop_lag_5.
     """
-    if lags is None:
-        lags = [60, 300]
+    if stop_lags is None:
+        stop_lags = [1, 3, 5]
+
+    if "is_stop_event" not in df.columns:
+        raise ValueError(
+            "compute_lag_features requires 'is_stop_event' column. "
+            "Ensure forward_fill_stop_columns() was called first."
+        )
 
     result = df.copy()
-    for lag in lags:
-        result[f"pax_lag_{lag}"] = result["itcs_numberOfPassengers"].shift(lag)
+    stop_mask = result["is_stop_event"]
+    stop_rows = result.loc[stop_mask, "itcs_numberOfPassengers"]
+
+    for lag in stop_lags:
+        col = f"pax_stop_lag_{lag}"
+        lagged = stop_rows.shift(lag)
+        result[col] = np.nan
+        result.loc[stop_mask, col] = lagged.values
+        result[col] = result[col].ffill()
+
     return result
 
 
@@ -181,6 +202,7 @@ def build_feature_set(
         "odometry_vehicleSpeed",              # replaced by speed_kmh + rolling
         "temp_C",                             # EDA Fig 08: r=-0.011, no signal
         "busNumber",                          # bus identifier, not a predictor
+        "is_stop_event",                      # pipeline marker, not a feature
     ]
     for col in drop_cols:
         if col in result.columns:
