@@ -172,9 +172,9 @@ def run_training(X_train, y_train, X_test, y_test, framework, checkpoint_path):
         plt.close(fig)
 
         # Checkpoint after each model
-        ckpt[name] = {k: v for k, v in metrics.items()
-                      if k != "confusion_matrix"}
-        ckpt[name]["confusion_matrix"] = metrics["confusion_matrix"].tolist()
+        # save_checkpoint expects numpy CM + "params" key
+        metrics["params"] = {}
+        ckpt[name] = metrics
         save_checkpoint(ckpt, checkpoint_path)
 
     return results
@@ -187,7 +187,7 @@ def run_training(X_train, y_train, X_test, y_test, framework, checkpoint_path):
 log("=" * 60)
 log("Training with Lag Features (07_train_with_lags.py)")
 log("=" * 60)
-log(f"Lag features: pax_lag_60, pax_lag_300")
+log(f"Lag features: pax_stop_lag_1, pax_stop_lag_3, pax_stop_lag_5 (stop-level)")
 
 # 1. Load data
 log("\n[1] Loading data...")
@@ -244,9 +244,9 @@ test_temporal_feat = build_feature_set(test_temporal)
 log(f"  Feature engineering done in {time.time()-t0:.1f}s")
 
 # Verify lag columns exist
-lag_cols = [c for c in train_pooled_feat.columns if c.startswith("pax_lag_")]
+lag_cols = [c for c in train_pooled_feat.columns if c.startswith("pax_stop_lag_")]
 log(f"  Lag features present: {lag_cols}")
-assert len(lag_cols) >= 2, f"Expected lag features, found: {lag_cols}"
+assert len(lag_cols) >= 3, f"Expected 3 stop-level lag features, found: {lag_cols}"
 
 log(f"  Total features: {len([c for c in train_pooled_feat.columns if c not in ['mission_name', 'itcs_numberOfPassengers', 'demand_class']])}")
 
