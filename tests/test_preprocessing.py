@@ -325,6 +325,50 @@ class TestForwardFillStopColumns:
         assert result["itcs_numberOfPassengers"].iloc[3] == 5.0
         assert result["itcs_numberOfPassengers"].iloc[4] == 5.0
 
+    def test_adds_is_stop_event_column(self):
+        """forward_fill_stop_columns should add is_stop_event column."""
+        df = pd.DataFrame({
+            "itcs_numberOfPassengers": [np.nan, 15.0, np.nan],
+            "itcs_busRoute": ["-", "83", "-"],
+            "itcs_stopName": ["-", "StopA", "-"],
+        })
+        result = forward_fill_stop_columns(df)
+        assert "is_stop_event" in result.columns
+
+    def test_is_stop_event_marks_original_non_nan(self):
+        """is_stop_event should be True only where original pax was non-NaN."""
+        df = pd.DataFrame({
+            "itcs_numberOfPassengers": [np.nan, np.nan, 15.0, np.nan, np.nan, 25.0, np.nan],
+            "itcs_busRoute": ["-", "-", "83", "-", "-", "83", "-"],
+            "itcs_stopName": ["-", "-", "StopA", "-", "-", "StopB", "-"],
+        })
+        result = forward_fill_stop_columns(df)
+        expected = [False, False, True, False, False, True, False]
+        assert list(result["is_stop_event"]) == expected
+
+    def test_is_stop_event_all_nan(self):
+        """All NaN passengers => all False is_stop_event."""
+        df = pd.DataFrame({
+            "itcs_numberOfPassengers": [np.nan, np.nan, np.nan],
+            "itcs_busRoute": ["-", "-", "-"],
+            "itcs_stopName": ["-", "-", "-"],
+        })
+        result = forward_fill_stop_columns(df)
+        assert not any(result["is_stop_event"])
+
+    def test_is_stop_event_preserves_forward_fill_behavior(self):
+        """Adding is_stop_event must not change forward-fill behavior."""
+        df = pd.DataFrame({
+            "itcs_numberOfPassengers": [np.nan, 10.0, np.nan, 20.0],
+            "itcs_busRoute": ["-", "83", "-", "83"],
+            "itcs_stopName": ["-", "StopA", "-", "StopB"],
+        })
+        result = forward_fill_stop_columns(df)
+        assert np.isnan(result["itcs_numberOfPassengers"].iloc[0])
+        assert result["itcs_numberOfPassengers"].iloc[1] == 10.0
+        assert result["itcs_numberOfPassengers"].iloc[2] == 10.0
+        assert result["itcs_numberOfPassengers"].iloc[3] == 20.0
+
 
 # -----------------------------------------------------------------------
 # Apply unit conversions tests

@@ -101,6 +101,9 @@ def forward_fill_stop_columns(df: pd.DataFrame) -> pd.DataFrame:
     result = df.copy()
 
     if "itcs_numberOfPassengers" in result.columns:
+        # Mark stop events BEFORE forward-fill destroys the NaN pattern.
+        # Used by compute_lag_features() to compute stop-level lags.
+        result["is_stop_event"] = result["itcs_numberOfPassengers"].notna()
         result["itcs_numberOfPassengers"] = result["itcs_numberOfPassengers"].ffill()
 
     for col in ["itcs_busRoute", "itcs_stopName"]:
