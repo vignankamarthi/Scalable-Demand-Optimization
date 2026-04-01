@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=256G
-#SBATCH --time=08:00:00
+#SBATCH --time=06:00:00
 #SBATCH --output=logs/lags_%j.log
 #SBATCH --error=logs/lags_%j.err
 #SBATCH --mail-type=END,FAIL
