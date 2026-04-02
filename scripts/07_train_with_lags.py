@@ -81,7 +81,7 @@ def get_model_configs(seed=RANDOM_SEED):
         },
         "random_forest": {
             "model": RandomForestClassifier(
-                n_estimators=300, n_jobs=-1, random_state=seed,
+                n_estimators=100, n_jobs=-1, random_state=seed,
             ),
             "needs_label_encoding": False,
         },

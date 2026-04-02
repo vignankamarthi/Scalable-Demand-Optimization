@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
+#SBATCH --mem=64G
 #SBATCH --time=04:00:00
 #SBATCH --output=logs/emb_train_%j.log
 #SBATCH --error=logs/emb_train_%j.err
