@@ -55,11 +55,11 @@ def save_checkpoint(all_results, path):
         serializable[name] = {
             "macro_f1": m["macro_f1"],
             "balanced_accuracy": m["balanced_accuracy"],
-            "confusion_matrix": m["confusion_matrix"].tolist(),
+            "confusion_matrix": m["confusion_matrix"].tolist() if hasattr(m["confusion_matrix"], "tolist") else m["confusion_matrix"],
             "per_class": m["per_class"],
-            "train_time_s": m["train_time_s"],
-            "predict_time_s": m["predict_time_s"],
-            "params": m["params"],
+            "train_time_s": m.get("train_time_s"),
+            "predict_time_s": m.get("predict_time_s"),
+            "params": m.get("params", {}),
         }
     tmp_path = path + ".tmp"
     with open(tmp_path, "w") as f:
