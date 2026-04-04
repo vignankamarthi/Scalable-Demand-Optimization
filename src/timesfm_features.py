@@ -40,20 +40,27 @@ def attach_embeddings(
     Missions without cached embeddings get NaN in all embedding columns.
     Does not modify input DataFrame.
     """
-    result = df.copy()
     emb_cols = [f"tfm_emb_{i}" for i in range(EMBEDDING_DIM)]
 
-    # Initialize all embedding columns to NaN
-    for col in emb_cols:
-        result[col] = np.nan
-
-    # Load and broadcast per mission
-    for mission_name in result["mission_name"].unique():
+    # Build a small lookup table: mission_name -> 32 embedding values
+    records = []
+    for mission_name in df["mission_name"].unique():
         emb = load_mission_embeddings(mission_name, cache_dir)
-        if emb is None:
-            continue
-        mask = result["mission_name"] == mission_name
-        for i, col in enumerate(emb_cols):
-            result.loc[mask, col] = emb[i]
+        if emb is not None:
+            row = {"mission_name": mission_name}
+            for i, col in enumerate(emb_cols):
+                row[col] = emb[i]
+            records.append(row)
+
+    if not records:
+        # No embeddings found -- add NaN columns
+        result = df.copy()
+        for col in emb_cols:
+            result[col] = np.nan
+        return result
+
+    # Merge: one hash join instead of 45K .loc operations
+    emb_df = pd.DataFrame(records)
+    result = df.merge(emb_df, on="mission_name", how="left")
 
     return result
