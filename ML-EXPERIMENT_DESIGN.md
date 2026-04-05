@@ -171,3 +171,84 @@ figures/feature_group_importance.png -- group-level importance bar chart (RF)
    - Compute permutation importance on test set for both models (cross-validate Gini findings)
 5. Write results section for final report
 6. Submit deliverables (report + code + figures via Teams)
+
+---
+
+# Milestone 3 Updates (2026-04-05)
+
+This section documents the additions made in Milestone 3 after the baseline Milestone 2 work above was submitted (3/16/26). The content above reflects the Milestone 2 state and is preserved for historical accuracy.
+
+## Additional Models
+
+| # | Model | Config | Purpose |
+|---|---|---|---|
+| 3 | **XGBoost** | hist tree method, 500 estimators, max_depth=6, lr=0.05 | Gradient boosting alongside DT/RF for Milestone 2 extended run |
+| 4 | **ARIMA baseline** | Order selected via AIC grid search: ARIMA(8,1,3) | Pure temporal baseline on hourly aggregate ridership (F1=0.18 -- confirms temporal signal alone is insufficient) |
+| 5 | **TimesFM 2.5-200M** | Hook on `stacked_xf[-1]`, 1280-dim -> 32-dim PCA | Foundation model penultimate-layer embedding extraction |
+
+## Additional Feature Groups
+
+| Group | Features | Source |
+|---|---|---|
+| **Stop-level lag** (Task 2b) | `pax_stop_lag_1`, `pax_stop_lag_3`, `pax_stop_lag_5` | `compute_lag_features()` in `src/feature_engineering.py`. Passenger count at the previous 1, 3, 5 stop events. Forward-filled to all 1Hz rows in each stop interval. |
+| **TimesFM embeddings** (Task 3) | `tfm_emb_0` ... `tfm_emb_31` | `attach_embeddings()` in `src/timesfm_features.py`. 32-dim PCA of 1280-dim mean-pooled representations from TimesFM's last transformer layer. One vector per mission, broadcast to all 1Hz rows. |
+
+## Pipeline Flag: `is_stop_event`
+
+A boolean column added by `forward_fill_stop_columns()` in `src/preprocessing.py` BEFORE the forward-fill, marking rows where `itcs_numberOfPassengers` was originally non-NaN. This column preserves the NaN pattern that identifies stop events so downstream feature engineering can compute stop-level lags correctly. Dropped in `build_feature_set()` before training.
+
+## Target Leakage Discovery (Task 2b v1 -> v2)
+
+**v1 (FAILED):** Initial lag features used `shift(60)` and `shift(300)` on the forward-filled 1Hz passenger count. DT pooled F1 = 0.8743 (vs baseline 0.5713) -- too good.
+
+**Diagnosis:** Forward-fill creates a staircase -- passenger count is constant between stops (~100 second intervals). `shift(60)` on forward-filled data returns the current value ~95% of the time. The model was reading a near-copy of the target.
+
+**v2 (WINNER):** Lag features computed from actual stop events via `is_stop_event` mask. `stop_rows.shift(lag)` shifts at the stop-event level, then forward-fills the lag values to all 1Hz rows in each stop interval. The lag values come from genuinely earlier stop events and cannot leak the current count. RF temporal F1 = 0.8287 (+0.2221 over baseline, real signal).
+
+## TimesFM Embedding Extraction
+
+TimesFM 2.5-200M architecture (verified via `scripts/08_probe_timesfm.py`):
+- Tokenizer (ResidualBlock) -- patches time series into 1280-dim tokens
+- `stacked_xf` -- ModuleList of 20 Transformer layers (each: RMSNorm -> MultiHeadAttention 16 heads -> RMSNorm -> Feedforward SiLU)
+- `output_projection_point` + `output_projection_quantiles` -- task heads (SKIPPED in embedding extraction)
+
+Extraction strategy:
+1. Forward hook on `stacked_xf[-1]` (last transformer layer, before output heads)
+2. For each mission: build 512-second context windows, run forward pass, capture hook output
+3. Mean-pool across sequence positions (window -> 1280-dim vector)
+4. Mean-pool across windows (mission -> 1280-dim vector)
+5. PCA fit on training mission embeddings only (no leakage), reduce to 32 dims
+6. Save per-mission as `data/cache/embeddings/{mission_name}.npy`
+
+PCA explained variance = 1.0000 at 32 components, indicating the 1280-dim embeddings live in a low-rank subspace (<= 32 dimensions of variation for bus ridership patterns).
+
+## Embedding Attachment: Merge-Based (OOM Fix)
+
+Initial `attach_embeddings()` implementation used an iterative `.loc` loop: for each of 1409 missions, mask the full 47M-row DataFrame and assign 32 values. That's ~45,000 full-DataFrame mask+assign operations, each allocating temporary memory. Result: OOM at 128GB, 55 minutes per attempt.
+
+Fix: build a 1409-row lookup DataFrame (mission_name + 32 embedding columns), then `pd.merge(df, emb_df, on="mission_name", how="left")`. One hash join. Attach time: 15 seconds. Memory: negligible.
+
+## Final Results (Temporal Evaluation)
+
+| Config | Decision Tree | Random Forest | XGBoost |
+|---|---|---|---|
+| Baseline (cross-sectional features only) | 0.5253 | 0.6066 | 0.6013 |
+| + Stop-level lag features | 0.7551 | **0.8287** | 0.8247 |
+| + Stop-level lags + TimesFM embeddings | 0.7398 | 0.8241 | 0.8254 |
+
+ARIMA on hourly aggregate (pure temporal): F1 = 0.1795.
+
+**Winner:** Random Forest with stop-level lag features, macro F1 = 0.8287 (+0.2221 over baseline).
+
+**Null result:** TimesFM embeddings did not improve over stop-level lags. Validates that bus ridership temporal signal is short-range and fully captured by recent stop history. Foundation model representations were redundant with hand-crafted lag features.
+
+## Milestone 3 Test Count
+
+243/243 tests passing (up from 150/150 in Milestone 2).
+
+- `test_timeseries.py` -- 16 tests (stationarity, ACF/PACF, hourly aggregate)
+- `test_arima.py` -- 10 tests (ARIMA fitting, forecasting, order selection)
+- `test_timesfm_features.py` -- 12 tests (embedding loading, merge-based attachment)
+- Lag feature tests rewritten for stop-level (12 new tests replacing 7 old 1Hz tests)
+- `test_preprocessing.py` -- 4 new tests for `is_stop_event` marker
+- `test_checkpoint.py` -- `.tolist()` guard fix

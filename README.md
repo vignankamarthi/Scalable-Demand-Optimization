@@ -15,8 +15,22 @@ The ZTBus dataset contains 1,409 trolleybus missions recorded at 1-second resolu
 - **Task**: 3-class ridership demand classification (low / medium / high)
 - **Key Insight**: Forward-filling passenger counts between stops (physically valid -- count is constant between boarding events) transforms 0.9% usable data into 100%
 - **Models**: Decision Tree, Random Forest, XGBoost, ARIMA baseline, TimesFM (foundation model)
-- **Temporal Analysis**: Stationarity testing (ADF/KPSS), autocorrelation diagnostics (ACF/PACF), lag feature engineering, foundation model embedding extraction
+- **Temporal Analysis**: Stationarity testing (ADF/KPSS), autocorrelation diagnostics (ACF/PACF), stop-level lag feature engineering, foundation model embedding extraction
 - **Evaluation**: Macro F1, balanced accuracy, per-class confusion matrices; pooled and temporal (pre-2022 train, 2022 test) frameworks
+
+## Final Results (Temporal Evaluation)
+
+| Config | Decision Tree | Random Forest | XGBoost |
+|---|---|---|---|
+| Baseline (cross-sectional features only) | 0.5253 | 0.6066 | 0.6013 |
+| + Stop-level lag features | 0.7551 | **0.8287** | 0.8247 |
+| + Stop-level lags + TimesFM embeddings | 0.7398 | 0.8241 | 0.8254 |
+
+ARIMA on hourly aggregate (pure temporal, no features): F1 = 0.1795 -- confirms temporal signal alone is insufficient for classification.
+
+**Winner: Random Forest with stop-level lag features, F1 = 0.8287** (+0.2221 over baseline).
+
+**Null result**: TimesFM embeddings (32-dim PCA of penultimate transformer layer) did not improve over stop-level lags. This validates that the temporal signal in bus ridership is fundamentally short-range and well-captured by recent stop history.
 
 ## The Problem: Urban Transit Demand Prediction
 
@@ -46,7 +60,7 @@ Scalable-Demand-Optimization/
 │   ├── timesfm_features.py     # TimesFM embedding loading and feature integration
 │   ├── covid.py                # COVID restriction features (Oxford Stringency Index)
 │   └── checkpoint.py           # Atomic JSON checkpointing for long-running jobs
-├── tests/                      # 235 tests (TDD -- all written before implementation)
+├── tests/                      # 243 tests (TDD -- all written before implementation)
 ├── scripts/
 │   ├── 01_eda.py               # Exploratory data analysis (11 figures)
 │   ├── 02_train.py             # Baseline training pipeline (DT + RF)
@@ -65,7 +79,7 @@ Scalable-Demand-Optimization/
 ├── ML-EXPERIMENT_DESIGN.md     # Full experiment plan, model configs, EDA rationale
 ├── DATASET_README.txt          # Authoritative column definitions from dataset authors
 ├── TEST_VALIDATION.md          # TDD methodology and test coverage strategy
-└── TASK.md                     # Reproducible execution guide
+└── PLAN.md                     # Milestone 3 execution log and final results
 ```
 
 ## Feature Engineering
@@ -76,7 +90,7 @@ Features are extracted from the dense (forward-filled) telemetry stream:
 - **Sensor**: altitude, power demand, traction force, brake pressure, door state
 - **Kinematic**: speed (km/h), acceleration (m/s^2), rolling mean/std of speed and power (60s, 300s windows)
 - **Spatial**: latitude/longitude (degrees), route (one-hot), stop name (top-20 + other bucket)
-- **Lag**: passenger count 60 seconds ago, 300 seconds ago (per-mission, no boundary bleeding)
+- **Stop-level lag**: passenger count at the previous 1, 3, and 5 stop events (computed from actual stop transitions, not forward-fill staircase -- prevents target leakage)
 - **COVID**: restriction flag and intensity from Oxford Stringency Index
 - **TimesFM Embeddings**: 32-dim PCA-reduced representations from TimesFM 2.5-200M penultimate transformer layer
 
@@ -112,7 +126,7 @@ python scripts/06_arima_baseline.py
 
 ## Testing
 
-TDD methodology -- all 235 tests written before implementation. Mock data throughout, no dataset dependency.
+TDD methodology -- all 243 tests written before implementation. Mock data throughout, no dataset dependency.
 
 ```bash
 python -m pytest tests/ -v
@@ -129,8 +143,9 @@ python -m pytest tests/ -v
 | No feature scaling needed | Tree-based models; scaling is irrelevant for split-based classifiers |
 | Top-20 stop encoding | Avoids 147-column explosion; rare stops bucketed as "other" |
 | Rolling windows (60s, 300s) | Captures short-term and medium-term kinematic context |
-| Per-mission lag computation | Prevents boundary bleeding; lag features are NaN at mission start |
+| Stop-level lag features (not 1Hz) | Naive 1Hz lags on forward-filled data leak the target (~95% correlation). Stop-level lags capture real autocorrelation across stop events |
 | PCA on TimesFM embeddings | Reduces 1280-dim to 32-dim; fitted on training missions only |
+| Merge-based embedding attachment | `pd.merge()` on a 1409-row lookup table replaced an iterative `.loc` loop (45K ops on 47M rows), cutting attach time from 55 min to 15 seconds |
 
 ## License
 
