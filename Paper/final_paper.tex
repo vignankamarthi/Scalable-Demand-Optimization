@@ -1,0 +1,65 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{float}
+\usepackage{subcaption}
+
+\graphicspath{{figs/}}
+
+\begin{document}
+
+\title{The Forward-Fill Lag Trap: Target Leakage in Sparse Event Time Series and a Stop-Level Fix for Transit Demand Classification}
+
+\author{
+  \IEEEauthorblockN{Vignan Kamarthi\IEEEauthorrefmark{1} and Aadit Bhatia\IEEEauthorrefmark{2}}
+  \IEEEauthorblockA{
+    \IEEEauthorrefmark{1}Khoury College of Computer Sciences,
+    Northeastern University, Boston, MA 02115, USA\\
+    \IEEEauthorrefmark{2}College of Science,
+    Northeastern University, Boston, MA 02115, USA\\
+    Email: \{kamarthi.v, bhatia.aa\}@northeastern.edu
+  }
+}
+
+\maketitle
+
+\input{sections/00_abstract}
+
+\begingroup
+\renewcommand\thefootnote{}\footnotetext{\textbf{Code and data availability.}
+All code, preprocessing scripts, model training pipelines, results, and
+figures are openly available at
+\url{https://github.com/vignankamarthi/Scalable-Demand-Optimization-}.
+The ZTBus dataset is publicly available via the ETH Research Collection
+at \url{https://doi.org/10.3929/ethz-b-000626668} under CC-BY-4.0.}
+\addtocounter{footnote}{-1}
+\endgroup
+
+\begin{IEEEkeywords}
+time series classification, feature engineering, target leakage, foundation models, transit demand, urban mobility, random forest, TimesFM
+\end{IEEEkeywords}
+
+\input{sections/01_introduction}
+\input{sections/02_related_work}
+\input{sections/03_data_and_problem}
+\input{sections/04_exploratory_analysis}
+\input{sections/05_methods}
+\input{sections/06_results}
+\input{sections/07_discussion}
+\input{sections/08_conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\input{sections/09_appendix}
+
+\end{document}

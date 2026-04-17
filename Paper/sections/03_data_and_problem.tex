@@ -1,0 +1,110 @@
+\section{Data and Problem Setup}
+\label{sec:data}
+
+\subsection{The ZTBus dataset}
+
+We use the ZTBus dataset introduced by Widmer et
+al.~\cite{widmer2023ztbus}, released under CC-BY-4.0. The dataset contains
+1,409 trolleybus missions recorded by two HESS lighTram~19 DC articulated
+vehicles operated by Verkehrsbetriebe Z\"urich (VBZ) in Zurich,
+Switzerland, between April 2019 and December 2022. Each mission is one
+complete driving assignment (from pull-out to pull-in) of typically 3--10
+hours' duration. Sensor data is recorded at 1~Hz across 26 channels
+covering GPS, odometry, electric powertrain, temperature, door state, and
+passenger count reported by the on-board Integrated Traffic Control System
+(ITCS).
+
+Each mission CSV contains 1~Hz sensor data with timestamps in both ISO and
+Unix formats. A separate metadata file lists mission-level attributes:
+start/end times, bus number, bus route, and driven distance. The dataset
+covers 10 bus routes, with Route~83 accounting for approximately 60\% of
+all missions. We use all 1,409 missions in our experiments.
+
+\subsection{The sparse event pattern}
+
+The \texttt{itcs\_numberOfPassengers} channel, the source of our target
+variable, is sparse. The ITCS updates passenger count only at stop events,
+when doors open and passengers board or alight. At the 1~Hz sampling rate,
+only approximately 1\% of rows contain a genuine passenger count; the
+remainder are \texttt{NaN}. Stop events occur roughly every 60--120 seconds
+of driving time, with some variability depending on route characteristics
+(dwell time, stop spacing, time of day).
+
+We forward-fill \texttt{itcs\_numberOfPassengers} within each mission: rows
+between stop events inherit the most recent known passenger count. This is
+physically justified: passenger count cannot change while the bus is in
+motion between stops, and it transforms the 0.9\% usable rows into
+approximately 99\% (rows before the first stop of a mission remain
+\texttt{NaN} and are dropped). After forward-fill and dropping pre-first-stop
+rows, we have 47,628,626 usable rows across the 1,409 missions.
+
+Critically, we preserve the original \texttt{NaN} pattern as a boolean
+column \texttt{is\_stop\_event}. A row is a stop event if and only if its
+\texttt{itcs\_numberOfPassengers} was non-\texttt{NaN} before forward-fill.
+This marker is what enables the stop-level lag feature computation
+described in Section~\ref{sec:methods}. Figure~\ref{fig:leakage} illustrates
+the forward-fill staircase and the role of \texttt{is\_stop\_event}.
+
+\subsection{Classification task and target construction}
+
+We formulate the problem as 3-class ridership demand classification at
+stop-time granularity. For each row in the dense (forward-filled) stream,
+we predict whether the current passenger count is \emph{low}, \emph{medium},
+or \emph{high}. The class boundaries are tercile thresholds $(q_1, q_2)$
+computed from the training partition of \texttt{itcs\_numberOfPassengers}:
+\begin{equation}
+y(t) = \begin{cases}
+  \text{low}    & \text{if } p(t) \le q_1 \\
+  \text{medium} & \text{if } q_1 < p(t) \le q_2 \\
+  \text{high}   & \text{if } p(t) > q_2
+\end{cases}
+\end{equation}
+where $p(t)$ is the passenger count at row $t$. On the full dataset,
+$q_1 \approx 9$ and $q_2 \approx 19$ passengers. The resulting class
+distribution is approximately balanced at 37\% low, 32\% medium, 32\% high
+(Figure~\ref{fig:passenger-dist}). Importantly, the tercile boundaries are
+computed \emph{exclusively} on the training data to prevent test-set
+information from leaking into the target definition.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{01_passenger_distribution.png}
+  \caption{Distribution of passenger counts across all ZTBus stop events,
+    with tercile boundaries $q_1 \approx 9$ and $q_2 \approx 19$ marked.
+    The resulting 3-class target is approximately balanced (37/32/32\%).}
+  \label{fig:passenger-dist}
+\end{figure}
+
+\subsection{Evaluation frameworks}
+
+We evaluate under two splitting strategies:
+\begin{itemize}
+  \item \textbf{Pooled split.} 80/20 mission-level random split. Train and
+    test come from the same distribution. This measures in-distribution
+    generalization.
+  \item \textbf{Temporal split.} Missions starting before 2022-01-01 are
+    training (811 missions, 57.6\%, covering April 2019 through
+    December 2021); missions starting in 2022 are test (598 missions,
+    42.4\%, covering January through December 2022). The 57/42
+    proportion is closer to balanced than a conventional 80/20 temporal
+    cut because 2022 was the single most data-rich year in the dataset
+    (598 missions, compared to 147 in 2019, 174 in 2020, and 490 in
+    2021). This measures generalization to future data and is the more
+    realistic deployment scenario.
+\end{itemize}
+
+We report macro-averaged F1 score and balanced accuracy under both
+frameworks, plus $3\times 3$ confusion matrices and per-class
+precision/recall. Macro-F1 is our primary metric because it weights classes
+equally, preventing the majority class from dominating the evaluation under
+any class imbalance.
+
+\subsection{Mission-level splits prevent row-level leakage}
+
+All splits are at the mission level, not the row level. Since a single
+mission generates tens of thousands of 1~Hz rows, a row-level random split
+would scatter the same mission across train and test, giving the model
+indirect access to other rows from the same trip (highly correlated
+neighbors via rolling features, nearby stops, and shared contextual
+features). Mission-level splits ensure that a mission is entirely in one
+partition.

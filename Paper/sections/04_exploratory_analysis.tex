@@ -1,0 +1,75 @@
+\section{Exploratory Data Analysis}
+\label{sec:eda}
+
+Before building models, we characterized the data through a suite of
+exploratory visualizations. Five findings shaped the feature engineering
+decisions of Section~\ref{sec:methods}.
+
+\textbf{Finding 1: Ridership follows strong daily and weekly cycles.}
+Figure~\ref{fig:hour} shows mean passenger count by hour of day, separated
+by weekday and weekend. Weekdays exhibit pronounced morning (7--9~AM) and
+afternoon (4--7~PM) peaks typical of commuter transit, while weekends show
+a broader single midday peak centered around 1--3~PM. This justifies
+including \texttt{hour}, \texttt{dayofweek}, and \texttt{is\_rush\_hour}
+as calendar-derived temporal features.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{03_ridership_by_hour.png}
+  \caption{Mean passenger count by hour of day, separated by weekday and
+    weekend. Weekdays show classic bimodal rush-hour structure; weekends
+    show a unimodal midday peak.}
+  \label{fig:hour}
+\end{figure}
+
+\textbf{Finding 2: Seasonal and COVID effects are visible in the longitudinal
+data.} Figure~\ref{fig:seasonal} shows monthly mean ridership across the
+2019--2022 study period. A sharp drop in mid-2020 reflects the COVID-19
+lockdown period in Zurich, followed by a gradual recovery through 2021 and
+2022. This motivated the inclusion of COVID intensity features derived from
+the Oxford COVID-19 Government Response Tracker (retained in the baseline
+feature set but not a focus of this paper).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{04_seasonal_trends.png}
+  \caption{Monthly mean passenger count across the study period. The
+    pronounced mid-2020 drop reflects the COVID-19 lockdown; the
+    2021--2022 gradual recovery is clearly visible.}
+  \label{fig:seasonal}
+\end{figure}
+
+\textbf{Finding 3: Routes exhibit distinct demand profiles.} The 10 ZTBus
+routes have visibly different passenger count distributions: some routes are
+consistently busier than others, and some show more temporal variance. We
+encode \texttt{busRoute} as a one-hot categorical feature with 9 dummies
+(drop-first to avoid collinearity).
+
+\textbf{Finding 4: Feature correlations identify redundancy.}
+Figure~\ref{fig:corr} shows the Pearson correlation matrix for the nine
+numeric raw and engineered features. Vehicle speed and power demand are
+strongly correlated (as expected, since the vehicle is electric and
+acceleration demand drives the battery), while ambient temperature has
+near-zero correlation with passenger count ($r = -0.011$). Based on this
+observation, we exclude raw temperature from the final feature set.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{07_correlation_matrix.png}
+  \caption{Pearson correlation matrix of numeric features. Speed and power
+    demand are strongly correlated (expected for an electric vehicle);
+    temperature has near-zero correlation with passenger count and is
+    excluded from the feature set.}
+  \label{fig:corr}
+\end{figure}
+
+\textbf{Finding 5: Stop names concentrate mass in a small set.} The 20
+most-visited stops account for the majority of stop events across the
+dataset. We encode \texttt{stopName} by retaining the top-20 categories
+and bucketing all other stops as \texttt{\_\_other\_\_}, avoiding a 147-way
+categorical explosion.
+
+These observations translate into the six feature groups described in
+Section~\ref{sec:methods}: Temporal, Spatial, Operational, Sensor, Status,
+and Categorical. The full feature specification is deferred to
+Section~\ref{sec:methods} for continuity.

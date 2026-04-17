@@ -1,0 +1,307 @@
+\section{Methods}
+\label{sec:methods}
+
+\subsection{Baseline feature engineering and ML pipeline}
+\label{sec:methods-baseline}
+
+Our baseline pipeline produces approximately 57 features per 1~Hz row,
+grouped into six categories:
+
+\begin{itemize}
+  \item \textbf{Temporal:} \texttt{hour}, \texttt{dayofweek}, \texttt{month},
+    \texttt{year}, \texttt{is\_weekend}, \texttt{is\_rush\_hour} (derived
+    from the ISO timestamp).
+  \item \textbf{Spatial:} latitude and longitude in degrees (converted from
+    radians) and GNSS altitude.
+  \item \textbf{Operational:} speed in km/h (from odometry), acceleration
+    (first difference of speed), and rolling mean and standard deviation of
+    speed over 60-second and 300-second windows. Rolling features are
+    computed per-mission to prevent cross-mission bleeding.
+  \item \textbf{Sensor:} electric power demand, traction force, brake
+    pressure, and rolling mean and standard deviation of power over 60-second
+    and 300-second windows.
+  \item \textbf{Status:} binary flags for door open, grid available,
+    halt brake active, and park brake active.
+  \item \textbf{Categorical:} one-hot encoded \texttt{busRoute} (9 columns
+    after drop-first) and top-20 \texttt{stopName} (20 columns + one
+    \texttt{\_\_other\_\_} bucket).
+\end{itemize}
+
+We train three models on this feature set:
+\begin{itemize}
+  \item \textbf{Decision Tree}~\cite{pedregosa2011sklearn} (scikit-learn,
+    Gini criterion, unlimited depth).
+  \item \textbf{Random Forest}~\cite{breiman2001rf} (100 trees, parallel
+    across CPUs, no max depth).
+  \item \textbf{XGBoost}~\cite{chen2016xgboost} (500 trees, max depth 6,
+    learning rate 0.05, histogram tree method).
+\end{itemize}
+
+All models are trained and evaluated independently under the pooled and
+temporal frameworks. We report macro-F1 and balanced accuracy on the test
+partition. Training uses all 47.6~M rows.
+
+\subsection{Time series diagnostics}
+\label{sec:methods-tsa}
+
+Before introducing temporal features, we verified that the passenger count
+series exhibits exploitable temporal structure at two granularities:
+stop-event level within a mission (intra-trip autocorrelation) and hourly
+aggregate level across all missions (inter-trip temporal structure).
+
+\textbf{Stationarity tests.} We applied the Augmented Dickey-Fuller (ADF)
+test~\cite{dickey1979unit} and the KPSS test~\cite{kwiatkowski1992kpss} in
+parallel. ADF tests the null hypothesis of a unit root (non-stationarity);
+rejection implies stationarity. KPSS tests the null of stationarity;
+rejection implies non-stationarity. Using both tests in combination
+provides robust evidence, as they have opposite nulls and complementary
+statistical power.
+
+For the hourly aggregate series, ADF rejects at $p < 0.001$ and KPSS rejects
+at $p = 0.01$, a signature of \emph{trend-stationarity} (the series is
+stationary around a trend, not around a constant mean). First differencing
+produces a fully stationary series. For representative stop-level series
+from individual missions, outcomes vary: three are stationary, one is
+trend-stationary, one is inconclusive (neither test rejects).
+
+\textbf{Autocorrelation diagnostics.} Figure~\ref{fig:acf} shows the
+autocorrelation function (ACF) of the hourly aggregate series out to 48 lags
+(two days). All 48 lags exceed the 95\% significance band, indicating
+substantial temporal memory. Figure~\ref{fig:pacf} shows the corresponding
+partial autocorrelation function (PACF): lag~1 is the dominant direct
+effect ($\approx 0.58$), lag~2 shows a significant negative coefficient
+($\approx -0.18$) consistent with mean reversion, and scattered significant
+spikes extend out to lag~41. This suggests that an autoregressive model of
+moderate order should capture the dominant temporal structure.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{03_acf_hourly.png}
+  \caption{Autocorrelation function (ACF) of the hourly aggregate passenger
+    count series, out to 48 lags. All 48 lags exceed the 95\% significance
+    band (shaded), indicating substantial temporal memory.}
+  \label{fig:acf}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{05_pacf_hourly.png}
+  \caption{Partial autocorrelation function (PACF) of the hourly aggregate
+    series. Lag~1 dominates ($\approx 0.58$); lag~2 shows a significant
+    negative effect consistent with mean reversion.}
+  \label{fig:pacf}
+\end{figure}
+
+\subsection{ARIMA baseline (temporal-only floor)}
+\label{sec:methods-arima}
+
+As a sanity check that temporal structure alone is insufficient for
+classification, we fit an $\text{ARIMA}(p, d, q)$ model to the hourly
+aggregate passenger count series~\cite{box1976timeseries}. Using an AIC grid
+search over $p \in \{0, \ldots, 10\}$, $q \in \{0, \ldots, 3\}$, and $d = 1$
+(confirmed from stationarity analysis), the optimal order is
+$\text{ARIMA}(8, 1, 3)$. We forecast the test period (2022+ hours),
+threshold the continuous predictions using the training tercile boundaries
+to produce class labels, and evaluate the resulting classification.
+
+Figure~\ref{fig:arima} shows the forecast versus actual values.
+Quantitatively, macro-F1 is 0.1795 and balanced accuracy is 0.335; the
+confusion matrix reveals the model predicts ``medium'' for over 99\% of
+test hours. This confirms that \emph{temporal signal alone is insufficient
+for this classification task}. However, the ARIMA result also confirms that
+\emph{temporal structure exists}, justifying the feature engineering approach
+that follows.
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.85\textwidth]{06_arima_baseline.png}
+  \caption{$\text{ARIMA}(8, 1, 3)$ forecast of hourly aggregate ridership
+    vs. actual values, 2022 test period (top). The model predicts a smooth
+    near-mean sequence, collapsing to ``medium'' for over 99\% of test
+    hours (confusion matrix, bottom) and yielding macro-F1 = 0.18.}
+  \label{fig:arima}
+\end{figure*}
+
+\subsection{The forward-fill lag trap (v1, failed)}
+\label{sec:methods-v1}
+
+Motivated by the strong autocorrelation observed in Figures~\ref{fig:acf}
+and~\ref{fig:pacf}, we added lag features to the baseline pipeline. Our
+first implementation used the obvious approach: apply a \texttt{shift(N)}
+operation to the forward-filled \texttt{itcs\_numberOfPassengers} column at
+the 1~Hz granularity, producing features \texttt{pax\_lag\_60} (passenger
+count 60 seconds ago) and \texttt{pax\_lag\_300} (passenger count 300
+seconds ago). These lag sizes align with the existing 60-second and
+300-second rolling window features.
+
+The resulting model performance was surprisingly strong: Decision Tree
+pooled macro-F1 jumped from 0.5713 (baseline) to 0.8743, a $+0.30$
+improvement from two features alone on a balanced 3-class task. This is
+suspicious by inspection, and we investigated.
+
+\textbf{Diagnosis.} Recall that passenger count is constant between stop
+events due to the forward-fill. Stop events occur roughly every 60--120
+seconds. The \texttt{shift(60)} operation looks back exactly 60 rows, which
+at 1~Hz is exactly 60 seconds. For a given row to have a different
+\texttt{lag(60)} value than its current value, a stop event must have
+occurred within the 60-second window $[t - 60, t)$. But most rows fall
+entirely within a single inter-stop interval, so $\text{lag}(60) = p(t)$ for
+the vast majority of rows. Empirically, we estimate this equality holds for
+approximately 95\% of rows.
+
+The model was not learning temporal structure; it was reading a near-copy
+of the target variable. The Decision Tree effectively learned:
+``if \texttt{pax\_lag\_60} $\le q_1$ then predict \emph{low}; else if
+$\le q_2$ then predict \emph{medium}; else predict \emph{high}'', which
+is the same rule as applying tercile boundaries directly to
+\texttt{pax\_lag\_60}. Since $\text{pax\_lag\_60} \approx p(t)$ for 95\% of
+rows, this rule achieves near-perfect accuracy on those rows.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{fig_08_leakage_diagram.pdf}
+  \caption{The forward-fill lag trap. Top: the raw passenger count (sparse
+    event signal). Middle: the forward-filled dense series (staircase).
+    Bottom: applying \texttt{shift(60)} at 1~Hz returns a nearly-identical
+    copy of the middle series because the 60-second window rarely crosses
+    a stop event. The overlap region (shaded) contains the leakage:
+    \texttt{lag(60)} equals the current value for approximately 95\% of
+    rows.}
+  \label{fig:leakage}
+\end{figure}
+
+This is a target leakage pattern that survives every standard safeguard.
+Mission-level splits are clean (no mission appears in both train and test),
+cross-validation is honest, and no test-set data has entered the pipeline.
+The leakage is \emph{endogenous to the feature construction}; it arises
+from the interaction between imputation and feature computation, both of
+which are individually benign.
+
+\subsection{The fix: stop-level lag features (v2)}
+\label{sec:methods-v2}
+
+We redesigned the lag feature computation to operate at the natural event
+granularity. Instead of shifting the forward-filled 1~Hz series, we shift
+only the stop-event rows and then forward-fill the \emph{lag values} onto
+the dense grid.
+
+Formally, let $\mathcal{S} = \{t_1, t_2, \ldots, t_S\}$ be the set of
+stop-event row indices in a mission, ordered chronologically, and $p(t)$
+be the passenger count at row $t$. The naive (v1) approach computes
+$\text{lag}_{60}^{\text{v1}}(t) = p(t - 60)$, which equals $p(t)$ whenever
+$(t - 60, t) \cap \mathcal{S} = \emptyset$. Our corrected (v2) approach
+computes, for each $k \in \{1, 3, 5\}$:
+\begin{equation}
+  \text{stoplag}_k(t) = p(t_{i - k})
+\end{equation}
+where $t_i$ is the most recent stop event on or before row $t$, i.e.,
+$t_i = \max\{t_j \in \mathcal{S} \mid t_j \le t\}$. In words: at each stop
+event $t_i$, we assign $\text{stoplag}_k$ the passenger count at
+$t_{i-k}$, the passenger count $k$ stops ago, and then forward-fill
+this value through all inter-stop rows until the next stop event updates
+it.
+
+We implement this in three steps:
+\begin{enumerate}
+  \item Mask the forward-filled series using \texttt{is\_stop\_event} to
+    recover the sparse stop-only sequence.
+  \item Apply \texttt{shift(k)} on the stop-only sequence.
+  \item Reindex the resulting sparse lagged series to the full 1~Hz grid
+    and forward-fill.
+\end{enumerate}
+
+By construction, $\text{stoplag}_k(t)$ is the passenger count at a strictly
+earlier stop event. It cannot equal the current passenger count unless the
+intervening stops happened to have the same count (which is rare in practice
+and, when it does occur, reflects genuine short-term stability rather than
+leakage). Figure~\ref{fig:stoplag} diagrams the computation.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{fig_09_stop_lag_broadcast.pdf}
+  \caption{Stop-level lag feature construction (v2). Top: the raw sparse
+    event series. Middle: $\text{stoplag}_1$ assigned at each stop event
+    as the previous stop's passenger count. Bottom: the lag values
+    forward-filled onto the dense 1~Hz grid. Each row now has a lag feature
+    that comes from a strictly earlier stop event and cannot equal the
+    current count.}
+  \label{fig:stoplag}
+\end{figure}
+
+We use $k \in \{1, 3, 5\}$, producing three stop-level lag features at
+offsets of one, three, and five prior stop events. Lag~1 captures the
+dominant short-range autocorrelation identified by the PACF analysis;
+lags~3 and~5 provide longer-range context while remaining within a
+typical trip.
+
+\subsection{TimesFM embedding extraction}
+\label{sec:methods-timesfm}
+
+For our third feature set, we extract representations from a pretrained
+time series foundation model. TimesFM~2.5-200M~\cite{das2024timesfm} is a
+decoder-only transformer with 20 layers, hidden dimension 1280, and 16
+attention heads, trained by Google Research on a large corpus of public
+time series data.
+
+\textbf{Architecture probe.} We verified the internal module structure of
+the official PyTorch release of TimesFM~2.5-200M by registering forward
+hooks and logging output shapes on a GPU compute node.
+The computation flow is:
+\begin{enumerate}
+  \item Input time series passed through a patched tokenizer
+    (a \texttt{ResidualBlock} with a linear projection).
+  \item The resulting tokens pass through \texttt{stacked\_xf}, a
+    \texttt{ModuleList} of 20 \texttt{Transformer} layers. Each layer
+    contains RMSNorm + MultiHeadAttention (16 heads, 80 dims each) +
+    RMSNorm + Feedforward (two linear layers with SiLU activation).
+  \item The output of \texttt{stacked\_xf[19]} (the last transformer layer)
+    passes to two projection heads:
+    \texttt{output\_projection\_point} (point forecasts) and
+    \texttt{output\_projection\_quantiles} (uncertainty bounds).
+\end{enumerate}
+
+At the output of the last transformer layer, before the projection heads
+compress the information to forecast scalars, each token in the sequence
+has a 1280-dimensional representation encoding the model's accumulated
+understanding of the temporal context after 20 rounds of self-attention
+and feedforward processing.
+
+\textbf{Extraction pipeline.} For each of the 1,409 missions, we build
+overlapping 512-second context windows of the forward-filled passenger
+count with a 60-second stride. Each window is passed through the TimesFM
+forecast pipeline, and a forward hook registered on \texttt{stacked\_xf[-1]}
+captures the penultimate-layer output. We then mean-pool across the
+sequence dimension to produce one 1280-dimensional vector per window, and
+mean-pool across all windows within a mission to produce one
+1280-dimensional vector per mission. Double mean-pooling is admittedly lossy,
+but it produces a fixed-size per-mission representation suitable for use as
+tabular features.
+
+\textbf{PCA reduction.} The 1280-dimensional raw embeddings are reduced
+via PCA to 32 dimensions. The PCA is fit \emph{exclusively on training-set}
+mission embeddings (pre-2022) and then applied to all missions, preventing
+test-set information from influencing the reduction. Remarkably, the 32
+retained components capture \emph{100\% of the variance} in the training
+embeddings, indicating that the foundation model's representations for
+ZTBus bus ridership data live in a low-rank subspace of dimension at most
+32. We return to this observation in Section~\ref{sec:discussion}.
+
+\textbf{Feature attachment.} Each 1~Hz row in the training matrix inherits
+the 32-dimensional embedding of its parent mission. We implement this via
+a single \texttt{pd.merge} on a 1409-row lookup table rather than iterative
+per-mission \texttt{.loc} assignment. The merge-based implementation
+completes in 15 seconds on the full 47~M-row dataset, compared to an
+estimated 55 minutes for the iterative approach, avoiding both
+out-of-memory failures and unnecessary wall-clock time. This is an
+implementation detail but an important one: naive implementations of the
+broadcast pattern frequently cause OOM on large tabular datasets.
+
+\subsection{Reproducibility}
+
+All code is released as an open-source repository, including the full
+preprocessing pipeline, feature engineering, model training, evaluation,
+and figure generation. The pipeline includes 243 unit tests covering each
+module, written before implementation (test-first development). All
+stochastic operations are seeded for reproducibility. Cluster jobs use
+checkpointed training with atomic JSON writes so that crashes and wall-time
+kills can resume without re-computation.

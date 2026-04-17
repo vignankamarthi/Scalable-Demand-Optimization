@@ -1,0 +1,52 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented a strong applied result for stop-level transit demand
+classification on the ZTBus dataset~\cite{widmer2023ztbus}: a Random
+Forest trained with stop-level lag features reaches macro-F1 = 0.8287
+on the realistic temporal evaluation (pre-2022 train, 2022 test), a
+$+0.2221$ improvement over a 57-feature cross-sectional baseline of
+GPS, speed, power, and calendar features. The three stop-level lag
+features (\texttt{pax\_stop\_lag\_1}, \texttt{pax\_stop\_lag\_3},
+\texttt{pax\_stop\_lag\_5}) contribute approximately 22\% of total
+Gini importance in the winning Random Forest, with lag~1 dominating
+as predicted by the PACF analysis.
+
+Along the way we documented an invisible target leakage pattern that
+arises from the interaction of two standard time series preprocessing
+steps, forward-fill imputation and lag feature computation, when applied
+to sparse event data. A naive 1~Hz-lag-on-forward-filled-data approach
+inflates Decision Tree pooled macro-F1 from 0.5713 (baseline) to
+0.8743 ($+0.30$), apparently indicating strong temporal predictive
+power;
+diagnosis reveals the lag features equal the current target value for
+approximately 95\% of rows due to the forward-fill staircase, making
+them near-copies of the target variable. The leakage survives all
+standard safeguards (mission-level splits, honest cross-validation, no
+test-set contamination) because it is endogenous to the feature
+construction on the training data alone. Our fix computes lag features
+at the natural stop-event granularity and forward-fills the \emph{lag
+values} onto the dense grid rather than forward-filling the raw series
+first, eliminating the leakage while preserving the physically
+meaningful autoregressive signal.
+
+We further tested whether TimesFM~2.5-200M~\cite{das2024timesfm}
+penultimate-layer embeddings could improve over stop-level lag features
+and obtained a null result: no model benefits from the embeddings. The
+100\% PCA explained variance at 32 components suggests the foundation
+model's representations for this domain live in a low-rank subspace that
+is already spanned by short-range stop history. This is a cautionary
+counterweight to the assumption that foundation models always help when
+used as feature extractors on tabular time series data.
+
+Future work includes (1) testing the leakage pattern and fix on other
+sparse event domains (healthcare vital signs, financial tick data, IoT
+sensor streams), (2) fine-tuning TimesFM on the ZTBus data to see if
+task-adapted embeddings carry information beyond hand-crafted lag
+features, (3) deploying the model in a real-time transit operations
+setting with an explicit future-horizon forecast, (4) extending to a
+regression formulation to better model the high-demand tail, and (5)
+estimating performance variance across multiple random seeds (the
+present paper uses a single fixed training seed). Our reproducible
+pipeline, released as open source, provides a starting point for each
+of these directions.

@@ -1,0 +1,88 @@
+\section{Introduction}
+\label{sec:intro}
+
+Urban bus systems are the backbone of public transit in many cities. Fleet
+operators need near-real-time estimates of which stops and corridors will see
+the highest passenger volumes so they can dispatch additional vehicles,
+adjust schedules, and allocate drivers. Historically this has been done with
+aggregated historical averages and manual reporting, but the availability of
+instrumented vehicles (buses with GPS, powertrain sensors, and on-board
+passenger counters) has opened the door to data-driven forecasting with
+graph and attention models for stop-level demand \cite{li2023pagtsn}.
+
+Modern transit sensor data exhibits a characteristic structural pattern:
+dense continuous telemetry (GPS at 1~Hz, speed, power, braking force) arrives
+alongside sparse event data (passenger counts updated only when doors open
+at stops, typically every 60--120 seconds of driving time). The sparse
+series covers approximately 1\% of rows in a raw 1~Hz stream, with the vast
+majority of rows carrying only implicit ``no change'' information. This mix
+of dense-and-sparse is common in IoT and mobility applications more broadly.
+
+Data scientists approaching this kind of data default to two well-known
+preprocessing steps. First, they forward-fill the sparse series onto the
+dense timeline, justified by the physical argument that passenger count is
+constant between stops (no one boards or alights while the bus is moving).
+This transforms 0.9\% usable data into approximately 99\%. Second, they
+compute lag features on the now-dense series to capture temporal context,
+for example, \texttt{lag(60\,s)} and \texttt{lag(300\,s)} to match typical
+rolling-window sizes.
+
+\textbf{An obstacle.} Standard 1~Hz lag features computed on the
+forward-filled passenger count series induce target leakage: forward-fill
+makes the series piecewise constant between stop events (roughly every
+60--120 seconds), and typical lag windows (60~s, 300~s) rarely cross a
+stop boundary, so \texttt{lag(60\,s)} equals the current value for
+approximately 95\% of rows. Section~\ref{sec:methods-v1} diagnoses the
+mechanism in detail; Section~\ref{sec:methods-v2} presents the fix:
+compute lag features at stop-event granularity, then forward-fill the
+lag values onto the dense grid rather than forward-filling the raw
+series first.
+
+\textbf{Baseline.} Our reference point is a standard tree-model pipeline
+(Decision Tree, Random Forest, XGBoost) trained on 53 handcrafted sensor
+and temporal features (GPS, speed, power, acceleration, time-of-day,
+day-of-week, weather) with no passenger count information. On temporal
+splits this baseline reaches macro-F1 0.57 for Decision Tree and 0.6066
+for Random Forest. The contributions below are measured against these
+numbers.
+
+\textbf{Our contributions.}
+\begin{enumerate}
+  \item We present a strong applied result for stop-level transit demand
+    classification on the ZTBus dataset~\cite{widmer2023ztbus}, a
+    1,409-mission trolleybus dataset from Zurich, 2019--2022: a Random
+    Forest with stop-level lag features reaches temporal macro-F1 =
+    0.8287 ($+0.2221$ over the 57-feature cross-sectional baseline) on
+    the realistic pre-2022 train, 2022 test evaluation.
+  \item We document and fix the forward-fill lag trap underlying this
+    result. Adding naively computed 1~Hz passenger-count lag features on
+    forward-filled data lifts the Decision Tree from macro-F1 0.57 to
+    0.87, but we show this 30-point jump is target leakage: for
+    60-second lags on 1~Hz data, approximately 95\% of rows satisfy
+    \texttt{lag(60\,s) = current}, so the lag feature is a near-copy of
+    the target. Our fix computes lag features at the natural event
+    granularity (stop events) and then forward-fills the \emph{lag
+    values} onto the dense grid. The resulting features carry genuine
+    autoregressive information because they come from strictly earlier
+    stops.
+  \item We present a negative result on foundation-model feature
+    extraction. TimesFM~2.5-200M~\cite{das2024timesfm} penultimate-layer
+    embeddings (1280-dim, PCA-reduced to 32) do not improve any model
+    beyond the hand-crafted stop-level lags. PCA explained variance
+    reaches 100\% at 32 components, indicating the foundation model's
+    representations for this domain live in a low-rank subspace. We
+    interpret this as the embeddings being largely redundant with
+    recent-stop history.
+  \item We release a reproducible pipeline implementing all of the
+    above, including the event-marker design that enables stop-level
+    feature computation through a forward-fill-based preprocessing
+    pipeline.
+\end{enumerate}
+
+\textbf{Roadmap.} Section~\ref{sec:related} surveys related work.
+Section~\ref{sec:data} describes the ZTBus dataset and the classification
+task. Section~\ref{sec:eda} presents exploratory analysis.
+Section~\ref{sec:methods} develops the methodology, including the leakage
+diagnosis and fix. Section~\ref{sec:results} reports quantitative results.
+Section~\ref{sec:discussion} discusses generalization and limitations, and
+Section~\ref{sec:conclusion} concludes.

@@ -1,0 +1,84 @@
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Transit demand forecasting}
+
+Short-term transit demand prediction has been studied extensively. Classical
+approaches rely on time series regression or ARIMA on aggregated ridership
+data \cite{box1976timeseries}. More recently, graph neural networks have
+been used to model spatial dependencies between stops: Li et
+al.~\cite{li2023pagtsn} propose PAG-TSN, a parallel attention graph network
+for ridership demand that exploits inter-stop adjacency in smart
+transportation services. Tree-ensemble baselines (Random Forest, gradient
+boosting) remain competitive on tabular transit features, particularly
+when combined with classical temporal predictors such as lag terms and
+rolling statistics. The ZTBus dataset we use was introduced by Widmer et
+al.~\cite{widmer2023ztbus}, which describes the collection protocol and
+channel schema but does not present a demand classification pipeline.
+
+\subsection{Time series foundation models}
+
+A recent generation of large pretrained models aims to provide universal
+time series forecasting capabilities analogous to language models for text.
+TimesFM~\cite{das2024timesfm}, a 200M-parameter decoder-only transformer
+from Google Research, and related models such as Chronos, Moirai, and
+Lag-Llama follow similar patterns: patch the time series, embed via a
+tokenizer, pass through a stack of transformer layers, and project to a
+forecast head. Empirical evaluation of these models remains an open
+research area: Meyer et al.~\cite{meyer2025benchmarking} survey
+benchmarking challenges specific to time series foundation models,
+highlighting risks of information leakage through overlapping datasets
+and the memorization of global patterns from external shocks. Our work
+uses TimesFM not as a forecaster but as a \emph{feature extractor}, a use
+case that has received less empirical scrutiny and, as we show, exposes
+limitations in the generality of its learned representations when applied
+to structured tabular downstream tasks.
+
+\subsection{Feature leakage and evaluation integrity}
+
+Feature leakage, the accidental introduction of target information into
+features, is a long-recognized pitfall in applied machine
+learning~\cite{kaufman2012leakage}. Kaufman et al.\ formalize leakage as
+the inclusion of data in the training process that would not legitimately
+be available at prediction time, enumerate common sources (time-based
+leakage, target encoding, group-based splits), and recommend a set of
+detection and avoidance strategies. In time series contexts specifically,
+leakage can arise from train-test temporal overlap, look-ahead bias in
+rolling statistics, or cross-series correlation at the benchmark
+level~\cite{meyer2025benchmarking}. Our contribution identifies a
+different class of leakage: not at evaluation time, but at \emph{feature
+engineering} time, introduced by an interaction between imputation and
+feature computation that appears benign when the two steps are examined
+separately.
+
+\subsection{Sparse event time series}
+
+Sparse event data is common in many domains: medical vital signs recorded
+only during checkups, IoT sensor readings that trigger on thresholds, and
+financial tick data between quotes. Bagattini et
+al.~\cite{bagattini2019sparse} propose a classification framework
+specifically for sparse multivariate temporal features in medical records,
+introducing a three-phase symbolic transformation that handles variable
+sparsity without imputation. Dillmann et al.~\cite{dillmann2024events}
+develop sparse autoencoder representations of event time series for
+high-energy astrophysics, operating directly on energy-time binned event
+files without intermediate regularization. Che et
+al.~\cite{che2018grud} introduce GRU-D, which directly models
+missing-value patterns in multivariate healthcare time series rather than
+imputing at all. All of these approaches address sparsity by building
+models that treat sparsity as a first-class signal. We take the opposite
+approach: we use forward-fill imputation for its simplicity and physical
+grounding, then fix the resulting leakage at the feature engineering
+stage rather than the model.
+
+\subsection{Classical time series analysis}
+
+Our work makes extensive use of classical time series tools. Box and
+Jenkins~\cite{box1976timeseries} provide the foundational ARIMA framework
+we use for our temporal-only baseline. Dickey and
+Fuller~\cite{dickey1979unit} and Kwiatkowski et
+al.~\cite{kwiatkowski1992kpss} provide the ADF and KPSS unit root tests,
+which we apply in complementary fashion to establish stationarity
+properties. Autocorrelation (ACF) and partial autocorrelation (PACF)
+diagnostics remain the standard tools for characterizing temporal memory
+in a series.

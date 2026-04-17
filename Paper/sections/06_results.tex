@@ -1,0 +1,203 @@
+\section{Results}
+\label{sec:results}
+
+We report primary results under the temporal evaluation framework (pre-2022
+train, 2022 test), which is the more realistic deployment scenario. Pooled
+results are summarized in Section~\ref{sec:results-pooled}.
+
+\subsection{Full comparison table}
+
+Table~\ref{tab:main-results} summarizes macro-F1 across all feature
+configurations and models. The baseline uses the cross-sectional features
+described in Section~\ref{sec:methods-baseline} (approximately 57 features).
+The ``+ stop-level lags'' configuration adds the three
+\texttt{pax\_stop\_lag\_k} features (60 total). The ``+ stop lags + TimesFM
+embeddings'' configuration additionally includes the 32 PCA-reduced
+embedding dimensions (92 total). The ARIMA baseline is a standalone model
+trained on the hourly aggregate passenger count series and does not have
+per-model rows.
+
+\begin{table}[t]
+  \centering
+  \caption{Macro-F1, temporal evaluation (pre-2022 train, 2022 test).
+    The winner is Random Forest with stop-level lag features
+    (highlighted).}
+  \label{tab:main-results}
+  \begin{tabular}{l c c c}
+    \toprule
+    Configuration & DT & RF & XGB \\
+    \midrule
+    Baseline (cross-sectional)        & 0.5253 & 0.6066 & 0.6013 \\
+    + Stop-level lag features         & 0.7551 & \textbf{0.8287} & 0.8247 \\
+    + Stop lags + TimesFM embeddings  & 0.7398 & 0.8241 & 0.8254 \\
+    \bottomrule
+  \end{tabular}
+  \vspace{2pt}
+
+  \small
+  $\text{ARIMA}(8, 1, 3)$ on hourly aggregate: macro-F1 = 0.1795.
+\end{table}
+
+The best model is Random Forest with stop-level lag features, achieving
+macro-F1 = 0.8287, a $+0.2221$ improvement over the cross-sectional baseline
+(0.6066). XGBoost is a close second at 0.8247. Decision Tree, consistently
+the weakest of the three, still sees a large lift from stop-level lags
+($+0.2298$) but does not match the ensembles.
+
+\subsection{Baseline performance}
+
+Without temporal features, the best model (Random Forest) achieves
+macro-F1 = 0.6066 and balanced accuracy = 0.6185 on the temporal split.
+Decision Tree and XGBoost are close behind at 0.5253 and 0.6013,
+respectively. Figure~\ref{fig:baseline-compare} shows the three models side
+by side. All three exhibit similar per-class behavior: the low and medium
+classes are relatively well-classified, while the high class is the hardest,
+with many confusions into the medium class. This confirms that
+cross-sectional features capture some demand variation but miss critical
+temporal context.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{model_comparison_temporal.png}
+  \caption{Baseline model comparison on the temporal evaluation framework.
+    Random Forest is marginally best; XGBoost and Decision Tree trail
+    behind. All three miss the same temporal signal.}
+  \label{fig:baseline-compare}
+\end{figure}
+
+\subsection{Stop-level lag features produce large real gains}
+
+Adding the three stop-level lag features produces a substantial and
+consistent improvement across all three models:
+\begin{itemize}
+  \item Decision Tree: $0.5253 \to 0.7551$ ($+0.2298$)
+  \item Random Forest: $0.6066 \to 0.8287$ ($+0.2221$)
+  \item XGBoost: $0.6013 \to 0.8247$ ($+0.2234$)
+\end{itemize}
+
+Figure~\ref{fig:rf-lags-cm} shows the Random Forest confusion matrix under
+the stop-lag configuration. The high-class confusion that plagued the
+baseline is largely resolved: diagonal entries dominate, and per-class
+precision and recall are balanced across the three classes. The improvement
+is driven primarily by \texttt{pax\_stop\_lag\_1} (confirming the PACF
+analysis, which identified lag~1 as the dominant direct effect), with
+diminishing contributions from \texttt{pax\_stop\_lag\_3} and
+\texttt{pax\_stop\_lag\_5}.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\columnwidth]{cm_lags_rf_temporal.png}
+  \caption{Confusion matrix for Random Forest with stop-level lag features,
+    temporal evaluation. Macro-F1 = 0.8287. Per-class diagonals are strong
+    and balanced across low, medium, and high.}
+  \label{fig:rf-lags-cm}
+\end{figure}
+
+We verified that this improvement is leakage-free. For 100\% of rows where
+lag-1 exists (i.e., rows after the first stop of each mission),
+$\text{stoplag}_1(t) \ne p(t)$ unless two consecutive stops happened to
+have exactly the same passenger count (an occurrence at roughly 12\% of
+stop events, consistent with genuine short-term demand stability).
+
+\subsection{TimesFM embeddings: a null result}
+
+Adding the 32 PCA-reduced TimesFM embedding dimensions on top of the
+stop-level lag features does not improve any model:
+\begin{itemize}
+  \item Decision Tree: $0.7551 \to 0.7398$ ($-0.0153$)
+  \item Random Forest: $0.8287 \to 0.8241$ ($-0.0046$)
+  \item XGBoost: $0.8247 \to 0.8254$ ($+0.0007$)
+\end{itemize}
+
+All three changes are small in absolute terms (at most $-0.0153$ F1 for
+Decision Tree). All models in this study use a single fixed training
+seed (\texttt{RANDOM\_SEED} = 42); we did not estimate variance across
+seeds, and note multi-seed variance estimation as a natural follow-up.
+We interpret this as a \emph{null result}: TimesFM embeddings provide no
+usable information beyond what the stop-level lag features already carry.
+
+Figure~\ref{fig:rf-emb-cm} shows the Random Forest confusion matrix under
+the embedding-augmented configuration. Side-by-side with
+Figure~\ref{fig:rf-lags-cm}, it is visually indistinguishable, and the
+per-class precision and recall values differ only in the third decimal.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\columnwidth]{cm_lags_emb_rf_temporal.png}
+  \caption{Confusion matrix for Random Forest with stop-level lag features
+    \emph{plus} TimesFM embeddings. Macro-F1 = 0.8241, effectively
+    identical to Figure~\ref{fig:rf-lags-cm}. The embeddings contribute no
+    additional signal.}
+  \label{fig:rf-emb-cm}
+\end{figure}
+
+Two observations help explain this result. First, PCA explained variance
+reaches 100\% at 32 components; the 1280-dimensional raw embeddings live
+in a subspace of dimension at most 32. This suggests the foundation model
+has learned a relatively small number of ``temporal shapes'' for bus
+ridership, consistent with the intuition that urban transit patterns are
+structured and low-entropy (morning rush, evening rush, weekday midday,
+weekend, night service). Second, even if the embeddings capture valid
+temporal structure, that structure must be informative \emph{beyond} the
+recent-stop history to contribute to the classifier. Since the stop-level
+lag features already span the short-range autocorrelation identified by
+the PACF analysis, the embeddings are largely redundant.
+
+\subsection{Feature importance}
+
+Figure~\ref{fig:feat-imp} shows the top 20 features by Gini impurity
+reduction in the stop-lag Random Forest model. The three lag features
+dominate the top positions, followed by \texttt{hour},
+\texttt{dayofweek}, and the rolling power mean over 300 seconds.
+Figure~\ref{fig:group-imp} aggregates importance by feature group: Lag
+features contribute approximately 22\% of total importance, Temporal
+calendar features 18\%, Operational kinematic features 16\%, Sensor power
+features 14\%, Categorical route/stop encodings 13\%, Status flags 8\%,
+Spatial 5\%, and COVID features 4\%.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{feature_importance.png}
+  \caption{Top 20 features by Gini importance in the Random Forest model
+    with stop-level lag features. The three \texttt{pax\_stop\_lag\_k}
+    features dominate, followed by temporal calendar features and rolling
+    operational statistics.}
+  \label{fig:feat-imp}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{feature_group_importance.png}
+  \caption{Feature importance aggregated by group. Lag features lead at
+    approximately 22\%, followed closely by Temporal (18\%) and
+    Operational (16\%).}
+  \label{fig:group-imp}
+\end{figure}
+
+This confirms the quantitative story: recent-stop history is the single
+most predictive signal, but cross-sectional features (temporal calendar
+features and operational telemetry) still contribute meaningfully. No
+single group dominates; the best model uses all of them.
+
+\subsection{Per-class analysis}
+
+Across all configurations, the ``low'' class is easiest to predict
+(genuinely empty stops are distinctive from crowded ones), the ``medium''
+class is hardest (it is defined by being in the middle, with both neighbors
+to confuse), and the ``high'' class is intermediate. Adding stop-level lags
+improves all three classes roughly equally, with a slightly larger relative
+improvement on the ``high'' class, where the baseline struggled most.
+Embeddings do not change this per-class pattern.
+
+\subsection{Pooled evaluation}
+\label{sec:results-pooled}
+
+Under the pooled (random 80/20 mission split) evaluation framework, results
+are uniformly higher than the temporal split, reflecting the easier
+in-distribution task. The best model, Random Forest with stop-level lags,
+achieves macro-F1 = 0.8437 pooled vs.\ 0.8287 temporal. This
+$\approx 0.015$ gap is the generalization cost of deploying to future data
+and is consistent with standard distribution-shift observations. The
+ordering of configurations and models is identical to the temporal
+evaluation: stop-level lags deliver a large real gain, embeddings are
+approximately neutral.

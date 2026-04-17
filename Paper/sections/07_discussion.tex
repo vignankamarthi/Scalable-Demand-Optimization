@@ -1,0 +1,211 @@
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Why stop-level lags work}
+
+The stop-level lag features succeed because they capture real temporal
+autocorrelation in the passenger count series without the leakage artifact
+introduced by 1~Hz lags on forward-filled data. Each
+$\text{stoplag}_k(t)$ value is the passenger count at a strictly earlier
+stop event ($k$ stops ago), and the forward-fill broadcasting applied to
+the \emph{lag values} (rather than the raw series before feature
+computation) simply propagates this known earlier value through the
+inter-stop interval. There is no pathway by which the current passenger
+count can be recovered from the lag features, and Section~\ref{sec:results}
+empirically confirms the mechanism carries real predictive signal (+0.22
+macro-F1 across all three models). The PACF analysis (Figure~\ref{fig:pacf})
+supports this by identifying lag~1 as the dominant direct temporal
+dependency, consistent with the observation that lag-1 alone contributes
+most of the Gini importance among the three stop-level lag features.
+
+\subsection{Why TimesFM embeddings don't help}
+
+The most striking observation is the 100\% PCA explained variance at 32
+components. The foundation model's representations for this domain have at
+most 32 independent dimensions of variation, out of the 1280 available in
+the raw embedding space. Several interpretations are consistent with this
+observation.
+
+\textbf{Low-entropy domain.} Urban bus ridership is structured. There are
+only so many ``shapes'' a bus trip can take: morning rush hour, evening
+rush hour, weekday midday, weekend, night service, special events,
+holidays. Each presents a distinctive temporal pattern, but the number of
+distinct patterns is much smaller than 1280. The foundation model has been
+pretrained on massive and diverse time series data, but at inference time
+it projects our input into a subspace determined by what it has learned
+\emph{about this kind of data}. For low-entropy domains, that subspace is
+small.
+
+\textbf{Redundancy with hand-crafted lags.} The stop-level lag features
+already capture the most predictive component of the temporal structure,
+the short-range autocorrelation at lag~1. Whatever additional information
+the TimesFM embeddings encode (longer-range patterns, cross-mission
+similarities, daily periodicity captured via attention over longer
+contexts) is either not relevant to this specific classification task or
+not linearly recoverable by tree ensemble models. Recent large-scale
+benchmarks show that tree-based models consistently outperform neural
+networks on tabular data~\cite{grinsztajn2022trees}, so the lack of
+improvement from embedding augmentation is consistent with this broader
+finding.
+
+\textbf{Extraction lossiness.} Our double mean-pooling, first across the
+sequence dimension of each context window, then across all windows of a
+mission, is lossy. A more sophisticated aggregation (attention pooling,
+learned temporal query, or per-stop embeddings rather than per-mission)
+might preserve more signal. However, the simplicity of our pipeline is
+itself informative: the ``drop in and train'' use case of foundation models
+as feature extractors has a harder time with structured domains than with
+less-structured ones like natural language, consistent with broader evidence that pretrained model representations
+offer limited gains on structured time series
+tasks~\cite{zheng2025llmtimeseries}. The null result is a useful
+data point for practitioners considering whether to invest in foundation
+model extraction pipelines for tabular time series tasks.
+
+\textbf{Interpretability gap.} A natural diagnostic would be to
+correlate each of the 32 retained PCA components against our
+hand-crafted features to identify what the foundation model is
+``seeing.'' We do not conduct this analysis, and we note that such a
+correlation would be difficult to interpret even if computed: PCA
+components on the 1280-dimensional transformer activation space are
+orthogonal linear combinations of latent features that themselves lack
+direct semantic grounding in the input time series. Our hand-crafted
+features (e.g., \texttt{hour}, \texttt{pax\_stop\_lag\_1}) carry
+explicit domain semantics; the PCA components do not. The 100\%
+explained-variance-at-32-components result is the interpretable summary
+we can offer: the foundation model's representations for this domain
+live in a low-rank subspace, irrespective of what axes that subspace
+happens to be oriented along.
+
+\textbf{Design choice: PCA-reduced embeddings versus the forecast head.}
+A valid alternative to PCA reduction would be to feed TimesFM's scalar
+point forecast directly into the downstream classifier, since the
+forecast head is itself a learned mapping from the 1280-dimensional
+penultimate activations to a scalar prediction. This appears
+superficially equivalent to PCA-then-RF (both compose compression with
+a nonlinear head), but three considerations motivate our choice. First,
+the forecast head was trained to minimize forecast error on future
+passenger-count values, not to separate our three demand classes; its
+internal axes are optimized for magnitude prediction, not class
+separation. Second, 32 PCA dimensions let a tree ensemble learn
+interactions across the embedding (for example, branching on one
+component after another), whereas reducing to a single forecast scalar
+hands the classifier a one-dimensional summary and removes any
+possibility of such cross-component splits. Third, interpreting a
+negative result from forecast-scalar-as-feature is ambiguous: a failure
+could mean either the intermediate representation is uninformative, or
+the representation is fine but the forecast head channels it poorly for
+classification. Working directly on the intermediate representation
+separates these two questions. A forecast-head-as-feature comparison is
+a reasonable follow-up experiment.
+
+We emphasize that this is a null result \emph{for this specific use case},
+not a critique of TimesFM as a forecasting model~\cite{das2024timesfm}. The
+model may well be the right tool for other tasks, particularly univariate
+forecasting in domains with less hand-crafted feature engineering. Our
+finding is specific to using its penultimate-layer representations as
+tabular features on structured transit event data where short-range history
+is already the dominant signal.
+
+\subsection{Generalization of the forward-fill lag trap}
+
+The target leakage pattern we document is not specific to bus ridership. It
+arises whenever three conditions coincide: (1) the underlying signal is
+sparse event data, (2) forward-fill imputation produces a dense series, and
+(3) lag features are computed on the dense series with row offsets
+smaller than the typical inter-event gap. All three conditions are
+satisfied in many real-world domains:
+
+\begin{itemize}
+  \item \textbf{Medical vital signs.} Checkups produce sparse blood pressure
+    or glucose readings that are frequently forward-filled onto dashboards
+    at 1-minute resolution. A 5-minute lag feature on the dense series
+    equals the current value for the vast majority of rows between two
+    checkups.
+  \item \textbf{Financial tick data.} Quote updates arrive at irregular
+    intervals; forward-filling onto a 1-second grid and computing lag
+    features exhibits the same pattern between ticks.
+  \item \textbf{IoT sensor streams.} Sensors that report on thresholds
+    (door open, motion detected, temperature exceeding a setpoint) produce
+    sparse events often carried forward for aggregate reporting and
+    downstream analytics.
+  \item \textbf{Event logs in general.} Any time a log of discrete events
+    is upsampled to a regular grid to match other streams, the resulting
+    dense series is vulnerable.
+\end{itemize}
+
+In all these cases, the fix we propose (compute features at the natural
+event granularity and forward-fill the feature values, not the raw series
+before feature computation) generalizes directly. The key design pattern
+is to \emph{preserve the original event marker} (our
+\texttt{is\_stop\_event} flag) through the preprocessing pipeline so that
+downstream feature engineering can recover the sparse structure after
+imputation has filled in the gaps.
+
+\subsection{Practical recommendations for transit operators}
+
+For transit operators seeking to deploy a demand classification pipeline
+similar to ours, we recommend:
+\begin{enumerate}
+  \item Compute lag features at the stop-event level, not the 1~Hz level.
+    The computational overhead is minimal and the payoff (in avoided
+    leakage and real predictive accuracy) is substantial.
+  \item Use temporal evaluation splits (train on past missions, test on
+    future missions) rather than random mission-level splits. The pooled
+    evaluation overestimates deployment accuracy because the test
+    distribution is identical to train.
+  \item Start with Random Forest as the production baseline before
+    reaching for larger models. We find RF and XGBoost perform nearly
+    identically on this task, and both are easier to debug, interpret,
+    and deploy than foundation models.
+  \item Do not expect foundation model embeddings to help ``for free''
+    as drop-in features. They may require fine-tuning, longer context
+    windows, or task-specific adapter layers to contribute beyond
+    well-designed hand-crafted features.
+\end{enumerate}
+
+\subsection{Limitations}
+
+Our study has several limitations. First, we evaluate on a single city
+(Zurich) and a single transit mode (trolleybus). The stop-level lag pattern
+and the leakage fix should generalize, but the specific F1 numbers will
+not. Second, we do not fine-tune TimesFM on ZTBus data; our null result
+applies to zero-shot feature extraction, not to fine-tuned use. Third, our
+classification target is tercile-binned passenger count, which discards
+information about the exact count magnitude. A regression formulation
+might yield different conclusions, particularly for the high-demand tail
+where the absolute count matters more than which bucket it falls in.
+Fourth, we do not deploy the model in a real-time operational setting;
+the forecast horizon in production deployment would need to be explicitly
+modeled (here we classify the current row rather than forecast a future
+row). Fifth, we use mean-pooling to aggregate TimesFM embeddings, which is
+simple but lossy; a more sophisticated aggregation strategy may yield
+different results on the foundation model side.
+
+\textbf{Tree regularization.} We train Decision Tree and Random Forest
+with scikit-learn defaults: unlimited depth (\texttt{max\_depth=None}),
+no pruning, and no explicit minimum-leaf-size constraint. XGBoost uses
+\texttt{max\_depth=6}, a standard library default. Temporal
+out-of-sample performance (macro-F1 = 0.8287 for RF on 2022 held-out
+missions) suggests the learned structure is not trivially overfit to
+the pre-2022 training partition, but we do not verify generalization
+beyond ZTBus. An unbounded RF may encode splits idiosyncratic to the
+Zurich trolleybus operating envelope (routes, fleet, weather, COVID-era
+ridership). Regularized variants (bounded depth, minimum-leaf-samples,
+cost-complexity pruning) and evaluation on a disjoint transit agency
+(a different city or bus system entirely) are natural follow-ups for
+operators considering cross-system deployment.
+
+\textbf{Request-stop conventions.} ZTBus records trolleybus missions in
+Zurich, where scheduled stops are serviced by default in normal
+operation: the on-board ITCS reports a passenger-count update at each
+stop event when the doors open. Our stop-level lag features implicitly
+assume this default-service convention. In transit systems with
+request-stop conventions, where drivers only stop when a passenger
+signals demand (for example the MBTA Silver Line and many suburban
+routes), the event sequence becomes endogenous to demand itself: stops
+appear preferentially where passengers are, inducing selection bias
+into any feature computed at stop-event granularity. The forward-fill
+lag trap fix we propose would still eliminate the leakage artifact, but
+the resulting features would carry a demand-selection confound that is
+absent in a default-service regime. This is a constraint on
+cross-system generalization, not on the ZTBus result.

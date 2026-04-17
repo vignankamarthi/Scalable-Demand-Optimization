@@ -1,0 +1,29 @@
+\begin{abstract}
+Urban transit operators need stop-level short-term demand forecasts to
+dispatch vehicles, adjust schedules, and allocate drivers in real time.
+We study 3-class (low/medium/high) ridership demand classification on
+the ZTBus dataset (1,409 trolleybus missions, Zurich 2019--2022) under
+mission-level temporal splits (pre-2022 train, 2022 test) that mirror
+realistic deployment. Our best model, a Random Forest with stop-level
+lag features, reaches temporal macro-F1 = 0.8287 ($+0.2221$ over a
+57-feature cross-sectional baseline of GPS, speed, power, and calendar
+features). Along the way we identify and fix a subtle target-leakage
+pattern that arises when standard 1~Hz lag features are computed on
+forward-filled sparse passenger counts: the naive lag becomes a
+near-exact copy of the current value for roughly 95\% of rows.
+Computing lag features at the natural stop-event granularity, then
+forward-filling the lag values, eliminates the leakage while
+preserving the autoregressive signal. We additionally report a
+negative result: adding TimesFM~2.5-200M penultimate-layer embeddings
+(1280-dim, PCA-reduced to 32) on top of stop-level lags does not
+improve any model (F1 = 0.8241, a change of $-0.005$ relative to
+stop-lags-only under a single fixed training seed). The 32 retained
+components capture 100\% of the training-embedding variance,
+suggesting the foundation model's bus-ridership representations
+collapse onto a low-rank subspace already spanned by recent-stop
+history. Our contributions are (i) a strong applied result for
+stop-level transit demand classification, (ii) a diagnosis and
+practical fix for the forward-fill lag trap as a general
+practitioner's caution, and (iii) a null result on zero-shot
+foundation-model feature extraction for structured event data.
+\end{abstract}
